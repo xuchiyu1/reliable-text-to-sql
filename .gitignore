@@ -1,0 +1,14 @@
+# Data: never commit raw/processed data (SEC source cited in README; no redistribution)
+data/raw/*
+data/processed/*
+!data/raw/.gitkeep
+!data/processed/.gitkeep
+
+# Secrets (API keys etc.)
+.env
+
+# Python
+.venv/
+__pycache__/
+*.pyc
+.DS_Store
