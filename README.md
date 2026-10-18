@@ -16,7 +16,7 @@ Business users who can't write SQL but need answers from the company database.
 ## V1 does NOT include
 - Multiple databases, microservices, Redis/RabbitMQ, self-hosted GPU inference
 - Fine-tuning, multi-agent orchestration, a large frontend
-- Any proprietary data: public SEC data only
+- Any proprietary or employer data: public SEC data only
 
 ## Data source
 SEC Financial Statement Data Sets — https://www.sec.gov/data-research/sec-markets-data/financial-statement-data-sets
