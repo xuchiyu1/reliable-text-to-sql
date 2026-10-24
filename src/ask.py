@@ -19,6 +19,7 @@ Metric glossary (use these tags):
 - Total assets: tag = 'Assets'
 - Quarterly values use qtrs = 1; balance sheet values use qtrs = 0.
 - Do NOT use tags that only contain the word Revenue, such as CostOfRevenue or DeferredRevenue.
+- Prior-year comparative values are in the SAME filing (same adsh) with ddate one year earlier. Use ddate, not fy/fp, to find prior periods.
 
 Rules:
 - Return only one SQL SELECT statement. No explanation, no markdown.
@@ -38,6 +39,22 @@ def ask(question):
     if response.stop_reason == "refusal":   # 被安全规则拒绝了，就不返回 SQL
         return None
     # 回复里可能有好几块内容，只取文字部分
+    return "".join(b.text for b in response.content if b.type == "text")
+
+def fix(question, bad_sql, error):
+    # 把出错的 SQL 和数据库的报错信息发回给 Claude，让它自己改
+    response = client.messages.create(
+        model="claude-haiku-5-5",
+        max_tokens=16000,
+        system=SYSTEM,
+        messages=[
+            {"role": "user", "content": question},                  # 原来的问题
+            {"role": "assistant", "content": bad_sql},              # Claude 上次写的 SQL
+            {"role": "user", "content": f"That SQL failed with this error:\n{error}\nReturn only the corrected SQL."},
+        ],
+    )
+    if response.stop_reason == "refusal":
+        return None
     return "".join(b.text for b in response.content if b.type == "text")
 
 if __name__ == "__main__":

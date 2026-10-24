@@ -1,6 +1,6 @@
 from decimal import Decimal
 import psycopg
-from ask import ask          # 用你写的 ask() 去问 Claude
+from ask import ask, fix     # 用你写的 ask() 去问 Claude，fix() 用来修正报错的 SQL       # 用你写的 ask() 去问 Claude
 
 DB = "dbname=sec_fsds"
 
@@ -60,22 +60,35 @@ def is_correct(gold_rows, pred_rows):
         return False
     pred_nums = numbers(pred_rows)
     for g in numbers(gold_rows):
+        # 同一个数可能写成小数（0.0821）或百分比（8.21），两种都算对
+        candidates = [g, g * 100]
         # 标准答案里的每个数，都要在 Claude 的结果里找到（允许 0.1% 误差，需求第 5 题）
-        if not any(abs(g - p) <= abs(g) * 0.001 for p in pred_nums):
+        if not any(abs(c - p) <= abs(c) * 0.001 for c in candidates for p in pred_nums):
             return False
     return True
+MAX_FIXES = 2   # 最多让 Claude 改 2 次（需求第 7 题：自动修正最多 2 次）
 
+def answer(question):
+    # 问 Claude；如果 SQL 报错，就把错误发回去让它改，最多改 MAX_FIXES 次
+    sql = clean_sql(ask(question) or "")
+    for attempt in range(MAX_FIXES + 1):
+        try:
+            return sql, run_sql(sql), attempt           # 能跑通就返回：SQL、结果、改了几次
+        except Exception as e:
+            if attempt == MAX_FIXES:                    # 改够次数了还是错，就放弃
+                raise
+            sql = clean_sql(fix(question, sql, str(e)) or "")
 if __name__ == "__main__":
     passed = 0
     for case in CASES:
-        pred_sql = clean_sql(ask(case["question"]) or "")   # 1. 问 Claude
-        gold_rows = run_sql(case["gold"])                   # 2. 跑标准答案
+        gold_rows = run_sql(case["gold"])
         try:
-            pred_rows = run_sql(pred_sql)                   # 3. 跑 Claude 的 SQL
-            ok = is_correct(gold_rows, pred_rows)           # 4. 比对
+            sql, pred_rows, fixes = answer(case["question"])
+            ok = is_correct(gold_rows, pred_rows)
         except Exception as e:
-            print(case["id"], "ERROR:", e)                  # SQL 写错了也算失败
+            print(case["id"], "ERROR:", str(e).splitlines()[0])
             ok = False
+            fixes = MAX_FIXES
         passed += ok
-        print(case["id"], "PASS" if ok else "FAIL")
+        print(case["id"], "PASS" if ok else "FAIL", f"(fixes: {fixes})")
     print(f"accuracy: {passed}/{len(CASES)}")
