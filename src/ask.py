@@ -1,5 +1,6 @@
 import sys
 import anthropic
+
 from dotenv import load_dotenv
 load_dotenv(override=True)        # 用 .env 里的 key 覆盖系统里已有的旧 key
 load_dotenv()                     # 从 .env 读取 ANTHROPIC_API_KEY
@@ -12,10 +13,20 @@ SYSTEM = f"""You translate questions into PostgreSQL queries for this database.
 
 {SCHEMA}
 
+Metric glossary (use these tags):
+- Revenue: tag IN ('RevenueFromContractWithCustomerExcludingAssessedTax', 'Revenues', 'RevenueFromContractWithCustomerIncludingAssessedTax')
+- Net income: tag = 'NetIncomeLoss'
+- Total assets: tag = 'Assets'
+- Quarterly values use qtrs = 1; balance sheet values use qtrs = 0.
+- Do NOT use tags that only contain the word Revenue, such as CostOfRevenue or DeferredRevenue.
+
 Rules:
 - Return only one SQL SELECT statement. No explanation, no markdown.
 - Use only the tables and columns described above.
+- Match companies by name using ILIKE (e.g. c.name ILIKE '%masimo%'). The ticker column may be NULL.
 """
+
+
 
 def ask(question):
     response = client.messages.create(

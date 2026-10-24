@@ -1,11 +1,18 @@
 import pandas as pd
 import psycopg
+import json
 from decimal import Decimal
 
 RAW = "data/raw/2025q4"
 SIC_CODES = [3845, 3841]
 FORMS = ["10-K", "10-Q"]
-
+def load_tickers():
+    # SEC 官方的 CIK → 股票代码对照表
+    # 文件格式：{"0": {"cik_str": 320193, "ticker": "AAPL", "title": "Apple Inc."}, ...}
+    with open("data/raw/company_tickers.json") as f:
+        data = json.load(f)
+    # 我们的 cik 是文字（dtype=str），所以 cik_str 也转成文字，才能对上
+    return {str(row["cik_str"]): row["ticker"] for row in data.values()}
 def load_sub():
     sub = pd.read_csv(f"{RAW}/sub.txt", sep="\t", dtype=str)
         # TODO 1
@@ -46,7 +53,7 @@ def to_date(s):
     # "20250930" → 日期类型，数据库的 DATE 列需要它
     return pd.to_datetime(s, format="%Y%m%d").date()
 
-def write_db(sub, num):
+def write_db(sub, num, tickers):
     with psycopg.connect(DB) as conn:
         cur = conn.cursor()
 
@@ -57,7 +64,7 @@ def write_db(sub, num):
         for _, r in sub.drop_duplicates("cik").iterrows():
             cur.execute(
                 "INSERT INTO companies (cik, name, ticker, sic, countryba) VALUES (%s, %s, %s, %s, %s)",
-                (int(r["cik"]), r["name"], None, int(r["sic"]), r["countryba"]),
+                (int(r["cik"]), r["name"], tickers.get(r["cik"]), int(r["sic"]), r["countryba"]),
             )
 
         # 第 5b 步：filings（一份财报一行）
@@ -88,4 +95,5 @@ if __name__ == "__main__":
     num = num[ num["adsh"].isin(sub["adsh"]) ]
     print("top filings:", len(sub))
     print("top facts:", len(num))
-    write_db(sub, num)
+    tickers = load_tickers()
+    write_db(sub, num, tickers)
