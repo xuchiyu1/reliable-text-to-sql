@@ -33,6 +33,34 @@ CASES = [
                   AND cur.tag = 'RevenueFromContractWithCustomerExcludingAssessedTax'
                   AND cur.qtrs = 1
                   AND cur.ddate = '2025-09-30' AND prev.ddate = '2024-09-30'"""},
+    {"id": "q04",
+     "question": "What was Masimo's net margin in its latest quarter?",
+     "gold": """SELECT ni.value / rev.value FROM companies c
+                JOIN filings f           ON f.cik    = c.cik
+                JOIN financial_facts ni  ON ni.adsh  = f.adsh
+                JOIN financial_facts rev ON rev.adsh = f.adsh
+                                        AND rev.ddate = ni.ddate AND rev.qtrs = ni.qtrs
+                WHERE c.name = 'MASIMO CORP'
+                  AND ni.tag  = 'NetIncomeLoss'
+                  AND rev.tag = 'RevenueFromContractWithCustomerExcludingAssessedTax'
+                  AND ni.qtrs = 1 AND ni.ddate = '2025-09-30'"""},
+    {"id": "q05",
+     "question": "Rank Medtronic, Boston Scientific, Stryker, Dexcom, and Masimo by revenue in their latest quarter.",
+     "gold": """SELECT name, value FROM (
+                    SELECT c.name, ff.value,
+                           ROW_NUMBER() OVER (PARTITION BY c.cik ORDER BY ff.ddate DESC) AS rn
+                    FROM companies c
+                    JOIN filings f          ON f.cik   = c.cik
+                    JOIN financial_facts ff ON ff.adsh = f.adsh
+                    WHERE c.name IN ('MEDTRONIC PLC', 'BOSTON SCIENTIFIC CORP', 'STRYKER CORP',
+                                     'DEXCOM INC', 'MASIMO CORP')
+                      AND ff.tag IN ('RevenueFromContractWithCustomerExcludingAssessedTax',
+                                     'Revenues',
+                                     'RevenueFromContractWithCustomerIncludingAssessedTax')
+                      AND ff.qtrs = 1
+                ) t
+                WHERE rn = 1            -- 每家公司只留最新的那一期
+                ORDER BY value DESC"""},
 ]
 
 def clean_sql(text):
