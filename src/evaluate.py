@@ -61,6 +61,24 @@ CASES = [
                 ) t
                 WHERE rn = 1            -- 每家公司只留最新的那一期
                 ORDER BY value DESC"""},
+    {"id": "q07",
+     "question": "What was Masimo's total revenue for the first nine months of 2025?",
+     "gold": """SELECT ff.value FROM companies c
+                JOIN filings f          ON f.cik   = c.cik
+                JOIN financial_facts ff ON ff.adsh = f.adsh
+                WHERE c.name = 'MASIMO CORP'
+                  AND ff.tag = 'RevenueFromContractWithCustomerExcludingAssessedTax'
+                  AND ff.qtrs = 3                    -- 前三季度累计，不是单季
+                  AND ff.ddate = '2025-09-30'"""},
+    {"id": "q08",
+     "question": "How much did Dexcom spend on research and development in its latest quarter?",
+     "gold": """SELECT ff.value FROM companies c
+                JOIN filings f          ON f.cik   = c.cik
+                JOIN financial_facts ff ON ff.adsh = f.adsh
+                WHERE c.name = 'DEXCOM INC'
+                  AND ff.tag = 'ResearchAndDevelopmentExpense'   -- 词典里没有这个指标
+                  AND ff.qtrs = 1
+                  AND ff.ddate = '2025-09-30'"""},
 ]
 
 def clean_sql(text):
