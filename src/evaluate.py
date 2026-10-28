@@ -44,7 +44,7 @@ CASES = [
                   AND ni.tag  = 'NetIncomeLoss'
                   AND rev.tag = 'RevenueFromContractWithCustomerExcludingAssessedTax'
                   AND ni.qtrs = 1 AND ni.ddate = '2025-09-30'"""},
-    {"id": "q05",
+    {"id": "q05", "ordered": True,
      "question": "Rank Medtronic, Boston Scientific, Stryker, Dexcom, and Masimo by revenue in their latest quarter.",
      "gold": """SELECT name, value FROM (
                     SELECT c.name, ff.value,
@@ -83,14 +83,25 @@ def numbers(rows):
     # 把结果里所有的数字取出来，忽略日期、文字这些列
     return [float(x) for row in rows for x in row if isinstance(x, (int, float, Decimal))]
 
-def is_correct(gold_rows, pred_rows):
-    if len(gold_rows) != len(pred_rows):              # 行数不同，肯定不对
+def row_matches(gold_row, pred_row):
+    # 一行对一行：标准答案这一行的每个数字，都要在 Claude 对应那一行里找到
+    pred_nums = numbers([pred_row])
+    for g in numbers([gold_row]):
+        candidates = [g, g * 100]          # 小数或百分比都算对
+        if not any(abs(c - p) <= abs(c) * 0.001 for c in candidates for p in pred_nums):
+            return False
+    return True
+
+def is_correct(gold_rows, pred_rows, ordered=False):
+    if len(gold_rows) != len(pred_rows):   # 行数不同，肯定不对
         return False
+    if ordered:
+        # 排名题：第 1 行对第 1 行、第 2 行对第 2 行……顺序必须一致（需求第 5 题第 3 条）
+        return all(row_matches(g, p) for g, p in zip(gold_rows, pred_rows))
+    # 非排名题：不管顺序，标准答案里的每个数都能在结果里找到就算对
     pred_nums = numbers(pred_rows)
     for g in numbers(gold_rows):
-        # 同一个数可能写成小数（0.0821）或百分比（8.21），两种都算对
         candidates = [g, g * 100]
-        # 标准答案里的每个数，都要在 Claude 的结果里找到（允许 0.1% 误差，需求第 5 题）
         if not any(abs(c - p) <= abs(c) * 0.001 for c in candidates for p in pred_nums):
             return False
     return True
@@ -112,7 +123,7 @@ if __name__ == "__main__":
         gold_rows = run_sql(case["gold"])
         try:
             sql, pred_rows, fixes = answer(case["question"])
-            ok = is_correct(gold_rows, pred_rows)
+            ok = is_correct(gold_rows, pred_rows, case.get("ordered", False))
         except Exception as e:
             print(case["id"], "ERROR:", str(e).splitlines()[0])
             ok = False
