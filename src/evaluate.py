@@ -156,4 +156,4 @@ if __name__ == "__main__":
                 fixes = MAX_FIXES
         passed += ok
         print(case["id"], "PASS" if ok else "FAIL", f"(fixes: {fixes})")
-        print(f"accuracy: {passed}/{len(CASES)}")
+    print(f"accuracy: {passed}/{len(CASES)}")
