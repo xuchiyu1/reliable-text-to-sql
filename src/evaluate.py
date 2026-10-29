@@ -61,6 +61,8 @@ CASES = [
                 ) t
                 WHERE rn = 1            -- 每家公司只留最新的那一期
                 ORDER BY value DESC"""},
+    {"id": "q06", "refuse": True,
+     "question": "What is Masimo's stock price today?"},   # 数据里没有股价，应该拒答
     {"id": "q07",
      "question": "What was Masimo's total revenue for the first nine months of 2025?",
      "gold": """SELECT ff.value FROM companies c
@@ -138,14 +140,20 @@ def answer(question):
 if __name__ == "__main__":
     passed = 0
     for case in CASES:
-        gold_rows = run_sql(case["gold"])
-        try:
-            sql, pred_rows, fixes = answer(case["question"])
-            ok = is_correct(gold_rows, pred_rows, case.get("ordered", False))
-        except Exception as e:
-            print(case["id"], "ERROR:", str(e).splitlines()[0])
-            ok = False
-            fixes = MAX_FIXES
+        if case.get("refuse"):
+            # 拒答题：Claude 应该回答 CANNOT_ANSWER，而不是硬写一条 SQL（需求第 5 题第 5 条）
+            reply = ask(case["question"]) or ""
+            ok = "CANNOT_ANSWER" in reply
+            fixes = 0
+        else:
+            gold_rows = run_sql(case["gold"])
+            try:
+                sql, pred_rows, fixes = answer(case["question"])
+                ok = is_correct(gold_rows, pred_rows, case.get("ordered", False))
+            except Exception as e:
+                print(case["id"], "ERROR:", str(e).splitlines()[0])
+                ok = False
+                fixes = MAX_FIXES
         passed += ok
         print(case["id"], "PASS" if ok else "FAIL", f"(fixes: {fixes})")
-    print(f"accuracy: {passed}/{len(CASES)}")
+        print(f"accuracy: {passed}/{len(CASES)}")
