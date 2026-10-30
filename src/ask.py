@@ -25,6 +25,7 @@ Rules:
 - Return only one SQL SELECT statement. No explanation, no markdown.
 - Use only the tables and columns described above.
 - Match companies by name using ILIKE (e.g. c.name ILIKE '%masimo%'). The ticker column may be NULL.
+- If the question cannot be answered from these tables (for example stock prices, forecasts, or text from the filings such as risk factors), return exactly CANNOT_ANSWER and nothing else.
 """
 
 
