@@ -130,7 +130,7 @@ def is_correct(gold_rows, pred_rows, ordered=False):
             return False
     return True
 MAX_FIXES = 2   # 最多让 Claude 改 2 次（需求第 7 题：自动修正最多 2 次）
-RUNS = 3          # LLM 每次输出不一样，同一道题跑 3 次看稳不稳定
+RUNS = 3    # LLM 每次输出不一样，同一道题跑 3 次看稳不稳定
 
 def answer(question):
     # 问 Claude；如果 SQL 报错，就把错误发回去让它改，最多改 MAX_FIXES 次
@@ -156,6 +156,8 @@ if __name__ == "__main__":
                 try:
                     sql, pred_rows, fixes = answer(case["question"])
                     ok = is_correct(gold_rows, pred_rows, case.get("ordered", False))
+                    if not ok:
+                        print("  SQL:", sql)   # 答错时打印 Claude 写的 SQL，方便找原因
                 except Exception as e:
                     print(case["id"], "ERROR:", str(e).splitlines()[0])
                     ok = False
