@@ -20,6 +20,7 @@ Metric glossary (use these tags):
 - Quarterly values use qtrs = 1; balance sheet values use qtrs = 0.
 - Do NOT use tags that only contain the word Revenue, such as CostOfRevenue or DeferredRevenue.
 - Prior-year comparative values are in the SAME filing (same adsh) with ddate one year earlier. Use ddate, not fy/fp, to find prior periods.
+- A filing also contains prior-period comparative rows, so filtering by adsh/fy/fp alone returns several periods. When asking for one period, also filter ddate to that period's end date (e.g. the filing's latest ddate).
 
 Rules:
 - Return only one SQL SELECT statement. No explanation, no markdown.
