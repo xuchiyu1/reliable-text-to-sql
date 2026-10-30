@@ -81,6 +81,10 @@ CASES = [
                   AND ff.tag = 'ResearchAndDevelopmentExpense'   -- 词典里没有这个指标
                   AND ff.qtrs = 1
                   AND ff.ddate = '2025-09-30'"""},
+    {"id": "q09", "refuse": True,
+     "question": "Who is the CEO of Masimo?"},                            # 数据里没有人名
+    {"id": "q10", "refuse": True,
+     "question": "What is Dexcom's market share in glucose monitors?"},   # 没有市场份额数据
 ]
 
 def clean_sql(text):
