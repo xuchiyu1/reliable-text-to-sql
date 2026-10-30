@@ -130,6 +130,7 @@ def is_correct(gold_rows, pred_rows, ordered=False):
             return False
     return True
 MAX_FIXES = 2   # 最多让 Claude 改 2 次（需求第 7 题：自动修正最多 2 次）
+RUNS = 3          # LLM 每次输出不一样，同一道题跑 3 次看稳不稳定
 
 def answer(question):
     # 问 Claude；如果 SQL 报错，就把错误发回去让它改，最多改 MAX_FIXES 次
@@ -142,22 +143,27 @@ def answer(question):
                 raise
             sql = clean_sql(fix(question, sql, str(e)) or "")
 if __name__ == "__main__":
-    passed = 0
-    for case in CASES:
-        if case.get("refuse"):
-            # 拒答题：Claude 应该回答 CANNOT_ANSWER，而不是硬写一条 SQL（需求第 5 题第 5 条）
-            reply = ask(case["question"]) or ""
-            ok = "CANNOT_ANSWER" in reply
-            fixes = 0
-        else:
-            gold_rows = run_sql(case["gold"])
-            try:
-                sql, pred_rows, fixes = answer(case["question"])
-                ok = is_correct(gold_rows, pred_rows, case.get("ordered", False))
-            except Exception as e:
-                print(case["id"], "ERROR:", str(e).splitlines()[0])
-                ok = False
-                fixes = MAX_FIXES
-        passed += ok
-        print(case["id"], "PASS" if ok else "FAIL", f"(fixes: {fixes})")
-    print(f"accuracy: {passed}/{len(CASES)}")
+    wins = {case["id"]: 0 for case in CASES}   # 记录每题 3 次里通过了几次
+    for run in range(RUNS):
+        for case in CASES:
+            if case.get("refuse"):
+                # 拒答题：Claude 应该回答 CANNOT_ANSWER，而不是硬写一条 SQL（需求第 5 节第 5 条）
+                reply = ask(case["question"]) or ""
+                ok = "CANNOT_ANSWER" in reply
+                fixes = 0
+            else:
+                gold_rows = run_sql(case["gold"])
+                try:
+                    sql, pred_rows, fixes = answer(case["question"])
+                    ok = is_correct(gold_rows, pred_rows, case.get("ordered", False))
+                except Exception as e:
+                    print(case["id"], "ERROR:", str(e).splitlines()[0])
+                    ok = False
+                    fixes = MAX_FIXES
+            wins[case["id"]] += ok
+            print(f"run {run + 1}", case["id"], "PASS" if ok else "FAIL", f"(fixes: {fixes})")
+
+    for case_id, n in wins.items():
+        print(case_id, f"{n}/{RUNS}")                  # 例如 q07 2/3 = 不稳定
+    total = sum(wins.values())
+    print(f"accuracy: {total}/{len(CASES) * RUNS}")
