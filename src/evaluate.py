@@ -4,7 +4,7 @@ from decimal import Decimal
 import psycopg
 from ask import ask, fix     # 用你写的 ask() 去问 Claude，fix() 用来修正报错的 SQL       # 用你写的 ask() 去问 Claude
 
-DB = "dbname=sec_fsds"
+DB = "dbname=sec_fsds user=text2sql_reader"   # 只读账号：数据库层面只能 SELECT（第 3 层防线）
 
 # 评测题：问题 + 你手写的标准答案 SQL（和 cases.md 里的一样）
 CASES = [
@@ -141,6 +141,8 @@ RUNS = 1
 def answer(question):
     # 问 Claude；如果 SQL 报错，就把错误发回去让它改，最多改 MAX_FIXES 次
     sql = clean_sql(ask(question) or "")
+    if "CANNOT_ANSWER" in sql:                # Claude 判断答不了，就不必校验和执行了
+        return sql, None, 0
     for attempt in range(MAX_FIXES + 1):
         try:
             reason = validate(sql)
