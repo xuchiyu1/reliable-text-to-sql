@@ -24,6 +24,14 @@ def validate(sql):
         if table.name not in ALLOWED_TABLES | cte_names:
             return f"table not allowed: {table.name}"
     return None
+MAX_ROWS = 1000   # 防止一次查出几十万行，把内存和 token 撑爆
+
+def add_limit(sql):
+    """SQL 本身没写 LIMIT 的话，在末尾补一个 LIMIT 1000；写了就不动"""
+    tree = sqlglot.parse_one(sql, read="postgres")
+    if tree.args.get("limit") is None:
+        tree = tree.limit(MAX_ROWS)
+    return tree.sql(dialect="postgres")
 
 if __name__ == "__main__":
     tests = [
