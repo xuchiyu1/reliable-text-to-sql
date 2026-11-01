@@ -18,8 +18,10 @@ def respond(question):
     except Exception as e:                    # 修正 2 次还是失败，或者被 validator 拦下
         return f"Sorry, I could not build a safe, working query for this question.\n(reason: {str(e).splitlines()[0]})"
     if rows is None:                          # Claude 回答了 CANNOT_ANSWER
-        return ("This question can't be answered from the financial statement data "
-                "(it has no stock prices, forecasts, or filing text).")
+                return ("This question can't be answered from the financial statement data "
+                "(it has no stock prices, forecasts, or filing text).\n"
+                "You can ask about revenue, net income, assets, cash, growth or margins "
+                "of the 20 medical-device companies in the 2025Q4 SEC filings.")
     if not rows:                              # 空结果 ≠ 0
         return f"No matching data was found. This means the data is missing, not that the value is 0.\nSQL: {sql}\n{SOURCE}"
     names = column_names(sql, len(rows[0]))

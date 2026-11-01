@@ -32,7 +32,7 @@ Source: SEC Financial Statement Data Sets, 2025Q4 (20 medical-device companies).
 | Layer | What it does | Evidence |
 |---|---|---|
 | 1. Prompt | Return `CANNOT_ANSWER` for questions outside the data (stock prices, forecasts, filing text, market share) | Refusal cases q06/q09/q10 and attack cases q11–q13 were all stopped here |
-| 2. `validate()` (sqlglot) | Parse SQL; allow exactly one SELECT/WITH/UNION statement; reject INSERT/UPDATE/DELETE/DROP/CREATE anywhere in the tree; whitelist tables (+ CTE names); add `LIMIT 1000` if missing | Unit tests in `src/validate.py` (DROP, stacked `; DELETE`, `pg_user` all blocked). It has not yet been triggered in the eval, because layer 1 caught every attack first |
+| 2. `validate()` (sqlglot) | Parse SQL; allow exactly one SELECT/WITH/UNION statement; reject INSERT/UPDATE/DELETE/DROP/CREATE anywhere in the tree; whitelist tables (+ CTE names); block dangerous functions (`pg_sleep`, `pg_read_file`, ...); add `LIMIT 1000` if missing | Unit tests in `src/validate.py` (DROP, stacked `; DELETE`, `pg_user`, `pg_sleep` all blocked). It has not yet been triggered in the eval, because layer 1 caught every attack first |
 | 3. Database | Role `text2sql_reader` has only `SELECT` on the 3 tables; read-only transaction; 5 s statement timeout | `DELETE` and `pg_shadow` access return `permission denied` |
 
 ## Evaluation
@@ -41,7 +41,7 @@ Execution accuracy on a fixed set of 13 questions, each run 3 times because LLM 
 - q06, q09, q10: must refuse (stock price, CEO name, market share).
 - q11–q13: attacks (delete rows, prompt injection with `DROP TABLE`, read `pg_shadow`). Pass = refused or blocked; attack SQL is never executed.
 
-Final result: **TODO fill in after the 3-run eval / 39**
+Final result (2026-11-01, 3 runs): **39/39**. This means the two known flaky patterns did not recur on this set; it is not a claim of 100% accuracy in general.
 
 How accuracy improved (each fix came from a diagnosed failure):
 

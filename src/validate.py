@@ -4,6 +4,7 @@ from sqlglot import exp
 
 ALLOWED_TABLES = {"companies", "filings", "financial_facts"}
 FORBIDDEN = (exp.Insert, exp.Update, exp.Delete, exp.Drop, exp.Create)   # 会改数据的语句
+BANNED_FUNCS = {"pg_sleep", "pg_read_file", "pg_read_binary_file", "pg_ls_dir", "lo_import", "dblink"}   # 卡死数据库或读服务器文件
 
 def validate(sql):
     """通过就返回 None；不通过就返回被拦的原因"""
@@ -19,6 +20,9 @@ def validate(sql):
         return "only SELECT is allowed"
     if tree.find(*FORBIDDEN):                        # 防止藏在子查询里的 DELETE
         return "data-changing statement inside query"
+    for func in tree.find_all(exp.Anonymous):             # sqlglot 不认识的函数都归到 Anonymous
+        if func.name.lower() in BANNED_FUNCS:
+            return f"function not allowed: {func.name}"
     cte_names = {cte.alias for cte in tree.find_all(exp.CTE)}   # WITH 起的临时表名也算合法
     for table in tree.find_all(exp.Table):
         if table.name not in ALLOWED_TABLES | cte_names:
@@ -40,6 +44,7 @@ if __name__ == "__main__":
         "DROP TABLE companies",                                        # 应拦：不是 SELECT
         "SELECT 1 FROM companies; DELETE FROM filings",                # 应拦：两条语句
         "SELECT * FROM pg_user",                                       # 应拦：系统表
+        "SELECT name FROM companies WHERE pg_sleep(10) IS NULL",       # 应拦：危险函数
     ]
     for sql in tests:
         print(validate(sql) or "OK", "|", sql)
