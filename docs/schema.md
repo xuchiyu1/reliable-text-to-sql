@@ -9,15 +9,15 @@
 | Dataset | One row = | Unique key |
 |---|---|---|
 | SUB | one filing | adsh |
-| NUM | 财报里具体内容数字 | adsh, tag, version, ddate, qtrs, uom, segments, coreg |
-| TAG | 一个标签的解释 | tag, version |
-| PRE | 报表上的一行字 | adsh, report, line |
+| NUM | one reported number in a filing | adsh, tag, version, ddate, qtrs, uom, segments, coreg |
+| TAG | the definition of one tag | tag, version |
+| PRE | one line on a financial statement | adsh, report, line |
 
 ## 2. Why each NUM key field matters
-- ddate: without it, these two rows get confused: 2025 年的营收 和 2024 年的营收
-- qtrs: without it, these two rows get confused: 季度的营收 和 年度的营收
-- segments: without it, these rows get confused: 公司总营收 和 按产品线/地区拆分的营收
-- coreg: without it, these rows get confused: 整个集团的营收 和 子公司的营收
+- ddate: without it, these two rows get confused: revenue for 2025 and revenue for 2024
+- qtrs: without it, these two rows get confused: quarterly revenue and annual revenue
+- segments: without it, these rows get confused: total company revenue and revenue broken down by product line or region
+- coreg: without it, these rows get confused: revenue of the whole group and revenue of a subsidiary
 
 ## 3. V0.2 tables
 ### companies
@@ -25,23 +25,23 @@ One row = one company (split from SUB to remove repeated company info)
 
 | column | meaning |
 |---|---|
-| cik | 公司编号 |
-| name | 公司名（最新一份财报里的正式名称） |
-| ticker | 股票代码（如 NVDA），用来匹配用户说的简称 |
-| sic | 行业代码 |
-| countryba | 公司所在国家 |
+| cik | company ID |
+| name | company name (official name in its latest filing) |
+| ticker | stock ticker (e.g. NVDA), used to match short names users type |
+| sic | industry code |
+| countryba | country of the company's business address |
 
 - PK: cik
 
 ### filings
 | column | type | meaning |
 |---|---|---|
-| adsh | TEXT | 财报编号 |
-| cik | INTEGER | 公司编号 |
-| form | TEXT | 财报类型（10-K 年报 / 10-Q 季报） |
-| fy | INTEGER | 财年 |
-| fp | TEXT | 财期（FY / Q1 / Q2 / Q3） |
-| filed | DATE | 提交日期 |
+| adsh | TEXT | filing ID |
+| cik | INTEGER | company ID |
+| form | TEXT | filing type (10-K annual / 10-Q quarterly) |
+| fy | INTEGER | fiscal year |
+| fp | TEXT | fiscal period (FY / Q1 / Q2 / Q3) |
+| filed | DATE | filing date |
 
 - PK: adsh
 - FK: cik → companies.cik
@@ -51,13 +51,13 @@ One row = one company-level number in a filing (from NUM, only rows with empty `
 
 | column | type | meaning |
 |---|---|---|
-| adsh | TEXT | 财报编号 |
-| tag | TEXT | 指标标签（如 Revenues） |
-| version | TEXT | 标签来源版本 |
-| ddate | DATE | 截止日期（PostgreSQL DATE，不是 SEC 原始的 yyyymmdd 整数；去年同期用 `ddate - INTERVAL '1 year'`） |
-| qtrs | INTEGER | 统计季度数 |
-| uom | TEXT | 单位 |
-| value | NUMERIC | 数值 |
+| adsh | TEXT | filing ID |
+| tag | TEXT | metric tag (e.g. Revenues) |
+| version | TEXT | taxonomy version of the tag |
+| ddate | DATE | period end date (a PostgreSQL DATE, not SEC's raw yyyymmdd integer; for the same period last year use `ddate - INTERVAL '1 year'`) |
+| qtrs | INTEGER | number of quarters covered |
+| uom | TEXT | unit of measure |
+| value | NUMERIC | value |
 
 - PK: (adsh, tag, version, ddate, qtrs, uom)
 - FK: adsh → filings.adsh

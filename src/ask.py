@@ -2,11 +2,11 @@ import sys
 import anthropic
 
 from dotenv import load_dotenv
-load_dotenv(override=True)        # 用 .env 里的 key 覆盖系统里已有的旧 key
-load_dotenv()                     # 从 .env 读取 ANTHROPIC_API_KEY
+load_dotenv(override=True)        # let the key in .env override an old key already in the environment
+load_dotenv()                     # read ANTHROPIC_API_KEY from .env
 client = anthropic.Anthropic()
 
-# 把你写的 schema.md 整份交给 Claude，它只能靠这份说明来写 SQL
+# give Claude the whole schema.md; it writes SQL from this description only
 SCHEMA = open("docs/schema.md", encoding="utf-8").read()
 
 SYSTEM = f"""You translate questions into PostgreSQL queries for this database.
@@ -33,25 +33,25 @@ Rules:
 
 def ask(question):
     response = client.messages.create(
-        model="claude-haiku-5-5",     # 开发期用最便宜的模型；以后做 Opus 对比实验
+        model="claude-haiku-5-5",     # cheapest model during development; compare with Opus later
         max_tokens=16000,
         system=SYSTEM,
         messages=[{"role": "user", "content": question}],
     )
-    if response.stop_reason == "refusal":   # 被安全规则拒绝了，就不返回 SQL
+    if response.stop_reason == "refusal":   # refused by safety rules, so return no SQL
         return None
-    # 回复里可能有好几块内容，只取文字部分
+    # the reply may have several content blocks; keep only the text
     return "".join(b.text for b in response.content if b.type == "text")
 
 def fix(question, bad_sql, error):
-    # 把出错的 SQL 和数据库的报错信息发回给 Claude，让它自己改
+    # send the failing SQL and the database error back to Claude to fix
     response = client.messages.create(
         model="claude-haiku-5-5",
         max_tokens=16000,
         system=SYSTEM,
         messages=[
-            {"role": "user", "content": question},                  # 原来的问题
-            {"role": "assistant", "content": bad_sql},              # Claude 上次写的 SQL
+            {"role": "user", "content": question},                  # the original question
+            {"role": "assistant", "content": bad_sql},              # the SQL Claude wrote last time
             {"role": "user", "content": f"That SQL failed with this error:\n{error}\nReturn only the corrected SQL."},
         ],
     )
@@ -60,5 +60,5 @@ def fix(question, bad_sql, error):
     return "".join(b.text for b in response.content if b.type == "text")
 
 if __name__ == "__main__":
-    question = sys.argv[1]       # 终端里输入的那句英文问题
+    question = sys.argv[1]       # the English question typed in the terminal
     print(ask(question))

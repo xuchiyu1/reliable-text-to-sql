@@ -1,117 +1,117 @@
 # Requirements v0.1
 
 ## 1. User and scenario
-- 用户：行业研究或投研分析师，特别是刚入行、不会写 SQL 的初级分析师。
-- 场景：分析师做行业对比时，想快速拿到「某个行业几家公司最近一个季度的营收、净利润和同比增长」，但不想一份份翻财报 PDF，也不会写 SQL。
+- User: an industry or equity research analyst, especially a junior analyst who cannot write SQL.
+- Scenario: when comparing companies in an industry, the analyst wants "revenue, net income and year-over-year growth for a few companies in the latest quarter" quickly, without reading filing PDFs one by one and without writing SQL.
 
 ## 2. Supported question types
-V1 只支持 4 类：
+V1 supports only 4 types:
 
-| 类型 | 例句（公司名为示意） | SQL 难点 |
+| Type | Example (company names are illustrative) | SQL difficulty |
 |---|---|---|
-| 单个数值 | 「NVIDIA 最近一季营收多少？」 | 3 表 JOIN，必须带 qtrs、ddate |
-| 多公司对比/排名 | 「这几家公司最近一季营收从高到低排」 | ORDER BY，多公司 |
-| 同比增长 | 「AMD 最近一季营收同比增长多少？」 | 同一 tag 取两个 ddate 相减 |
-| 财务比率 | 「这几家公司的净利率各是多少？」 | 两个 tag 相除，单位一致 |
+| Single value | "What was NVIDIA's revenue last quarter?" | 3-table JOIN; must filter on qtrs and ddate |
+| Multi-company comparison / ranking | "Rank these companies by revenue in the latest quarter" | ORDER BY, multiple companies |
+| Year-over-year growth | "How much did AMD's revenue grow year over year last quarter?" | same tag at two ddates, then subtract |
+| Financial ratio | "What is the net margin of each of these companies?" | divide two tags with consistent units |
 
-评测题里要覆盖的变体（不算新类型）：
-- 资产负债表时点值（现金、总资产）：`qtrs = 0`
-- 累计值（前三季度累计营收）：`qtrs = 3` vs `qtrs = 1`
-- 筛选（营收超过 100 亿的公司）：WHERE + 阈值
+Variants the eval must cover (not new types):
+- Balance-sheet point-in-time values (cash, total assets): `qtrs = 0`
+- Cumulative values (revenue for the first three quarters): `qtrs = 3` vs `qtrs = 1`
+- Filters (companies with revenue above $10B): WHERE + threshold
 
-不支持、必须拒答（数据里没有答案）：
-- 预测：「明年营收会是多少？」
-- 股价：「它今天股价多少？」
-- 财报正文：「财报里提到了哪些风险？」
+Not supported, must refuse (the data has no answer):
+- Forecasts: "What will revenue be next year?"
+- Stock prices: "What is its stock price today?"
+- Filing text: "What risks does the filing mention?"
 
-V2 待办（只有一个季度包做不到）：
-- 环比（上一季度单季数在上一个季度包里）
-- 多年趋势
+V2 backlog (impossible with a single quarterly package):
+- Quarter-over-quarter (the previous quarter's value is in the previous quarterly package)
+- Multi-year trends
 
 ## 3. Metric → tag mapping
-两个阶段都做，用来做改进前后对比：
-- 基线（10/19）：把 TAG 的说明给 LLM，让它自己选 tag → 测出基线正确率
-- 改进（10/20–21）：维护映射表「业务指标 → 按优先级排的 tag 列表」，取这家公司实际用了的第一个 tag → 再测一次，和基线对比
-- 映射表里的 tag 必须根据导入后的真实数据填写，不凭记忆写（营收可能有 `Revenues`、`RevenueFromContractWithCustomerExcludingAssessedTax` 等多种写法）
+Do both stages, to compare before and after:
+- Baseline (10/19): give the LLM the TAG descriptions and let it choose the tag → measure baseline accuracy
+- Improved (10/20–21): maintain a mapping "business metric → tags in priority order" and use the first tag this company actually reports → measure again and compare with the baseline
+- Tags in the mapping must come from the real loaded data, not from memory (revenue can be `Revenues`, `RevenueFromContractWithCustomerExcludingAssessedTax`, and others)
 
 ## 4. Missing year / quarter
-默认值 + 在答案里写明用了什么假设：
-- 没说期间 → 用这家公司在数据里最新的一期
-- 没说单季还是累计 → 季报默认单季（`qtrs = 1`），年报默认全年（`qtrs = 4`）
-- 答案必须写明期间，例如「期间：截至 2025-09-30 的单季」
-- 多公司对比时，各公司财年不同，「最近一季」对应的日历月份可能不同 → 分别列出每家公司的期间
-- 只有在默认值也定不了时才反问（公司名有歧义、公司不在数据里）
+Use defaults, and state the assumption in the answer:
+- No period given → use the company's latest period in the data
+- Quarter vs cumulative not given → quarterly reports default to a single quarter (`qtrs = 1`), annual reports default to the full year (`qtrs = 4`)
+- The answer must state the period, e.g. "Period: single quarter ended 2025-09-30"
+- In multi-company comparisons, fiscal years differ, so "latest quarter" may map to different calendar months → list each company's period separately
+- Ask a clarifying question only when no default works (ambiguous company name, company not in the data)
 
 ## 5. What counts as correct
-1. 比执行结果，不比 SQL 文本（execution accuracy）：写法不同但结果一样就算对
-2. 原始数字必须完全一致；计算出的数（比率、增长率）允许 0.1% 相对误差
-3. 只有排名题要求顺序一致，其他题不管顺序
-4. 列名不管；列数对不上 → 标记人工复核，不自动算对
-5. 拒答题：系统拒答才算对，生成了 SQL 就算错
-6. （2026-10-24 补充）比率、增长率写成小数（0.0821）或百分比（8.21）都算对：真实用户问「增长多少」，回答 8.21% 是合理的，不应判错
-7. （2026-10-24 实现说明）evaluate.py 当前的比对方式：行数相同，且标准答案里的每个数字都能在 Claude 结果的数字列里找到（容差 0.1%）。Claude 多返回日期、单位等列不算错。这比第 4 条「列数不符 → 人工复核」宽松，题目多了以后要复查有没有误判
+1. Compare execution results, not SQL text (execution accuracy): different SQL with the same result counts as correct
+2. Raw numbers must match exactly; computed numbers (ratios, growth rates) may differ by up to 0.1% relative error
+3. Only ranking questions require the same row order; other questions ignore order
+4. Column names are ignored; a column-count mismatch → flag for manual review, not counted as correct automatically
+5. Refusal questions: correct only if the system refuses; generating SQL counts as wrong
+6. (Added 2026-10-24) Ratios and growth rates count as correct as a decimal (0.0821) or a percentage (8.21): a real user asking "how much did it grow" would accept 8.21%, so it should not be marked wrong
+7. (Implementation note, 2026-10-24) How evaluate.py currently compares: same row count, and every number in the gold answer is found in the numeric columns of Claude's result (0.1% tolerance). Extra columns from Claude, such as dates or units, are not counted as wrong. This is looser than rule 4 ("column-count mismatch → manual review"); re-check for false passes when the eval grows
 
 ## 6. Forbidden SQL
-两层防线：
+Two lines of defense:
 
-第 1 层：validator（执行前检查，用 SQL 解析器如 `sqlglot`，不用正则）
-1. 不能改数据：只允许 `SELECT` / `WITH ... SELECT`；拒绝 INSERT、UPDATE、DELETE、DROP、ALTER、TRUNCATE、CREATE、GRANT
-2. 不能做额外查询：只允许一条语句；只能查白名单里的 3 张表
-3. 不能用危险函数/命令：`pg_sleep`、`pg_read_file`、`COPY` 等
-4. 不能一直跑：自动加 `LIMIT 1000`；查询超时 5 秒
+Layer 1: validator (checks before execution, using a SQL parser such as `sqlglot`, not regex)
+1. No data changes: allow only `SELECT` / `WITH ... SELECT`; reject INSERT, UPDATE, DELETE, DROP, ALTER, TRUNCATE, CREATE, GRANT
+2. No extra queries: exactly one statement; only the 3 whitelisted tables
+3. No dangerous functions or commands: `pg_sleep`, `pg_read_file`, `COPY`, etc.
+4. No runaway queries: add `LIMIT 1000` automatically; 5-second query timeout
 
-第 2 层：数据库
-- 用只有 SELECT 权限的只读账号执行；validator 漏掉的，数据库也会拒绝
+Layer 2: database
+- Execute with a read-only role that has only SELECT; anything the validator misses is rejected by the database
 
 ## 7. What the user sees on failure
-总原则：查不到就说查不到，绝不编数字。所有显示给用户的内容用英文。
+Principle: if it can't be found, say so; never invent numbers. Everything shown to the user is in English.
 
-| 情况 | 给用户看什么 |
+| Situation | What the user sees |
 |---|---|
-| 问题不支持（预测、股价、财报正文） | 说明为什么答不了 + 提示能问什么 |
-| validator 拦下了 SQL | 不执行；说明「已拦截」+ 显示 SQL 和被拦原因 |
-| SQL 执行报错 | 自动修正最多 2 次（V0.3）；仍失败 → 「无法回答」+ 简化的错误原因 + SQL |
-| 结果为空 | 不能显示 0；说「没查到数据」+ 可能原因（公司不在数据里 / 这一期不存在） |
-| 问题有歧义 | 反问澄清（如「Meta 是指 Meta Platforms 吗？」） |
+| Unsupported question (forecast, stock price, filing text) | Why it can't be answered + what can be asked |
+| Validator blocked the SQL | Not executed; "blocked" + the SQL and the reason |
+| SQL execution error | Auto-repair up to 2 times (V0.3); still failing → "cannot answer" + a simplified error reason + the SQL |
+| Empty result | Never show 0; say "no data found" + possible reasons (company not in the data / period does not exist) |
+| Ambiguous question | Ask to clarify (e.g. "Do you mean Meta Platforms?") |
 
 ## 8. coreg NULL vs primary key
-V1 只导入 `coreg` 为空的行（整个集团的合并数字）：
-- 符合场景：分析师做行业对比看的是集团口径
-- 防止重复计算：集团数字已包含子公司，混进来 SUM 会算重
-- coreg 全为空 → 不放进表，主键变成 6 个字段，空值问题消失
-- 不选「空值换成空字符串」：隐藏了「空 = 整个集团」的含义
-- 不选「自增 id + 唯一约束」：PostgreSQL 唯一约束默认把多个空值视为不同，拦不住重复（需 `NULLS NOT DISTINCT`）
-- 局限（写进 README）：V1 不支持查询子公司/共同申报人的数字
-- 导入后先统计 coreg 不为空的行占比，确认丢掉的不多 → 已核实：SIC 3845 公司 15,796 行中只有 3 行
+V1 imports only rows where `coreg` is empty (consolidated numbers for the whole group):
+- Fits the scenario: analysts compare companies at the consolidated level
+- Prevents double counting: group numbers already include subsidiaries; mixing them in would double-count in SUM
+- coreg is always empty → drop the column; the primary key becomes 6 fields and the NULL problem disappears
+- Rejected "replace NULL with empty string": hides the meaning "empty = whole group"
+- Rejected "auto-increment id + unique constraint": by default PostgreSQL unique constraints treat multiple NULLs as distinct, so duplicates are not blocked (needs `NULLS NOT DISTINCT`)
+- Limitation (in README): V1 cannot answer questions about subsidiary / co-registrant numbers
+- After loading, first count the share of rows with non-empty coreg to confirm little is dropped → verified: only 3 of 15,796 rows for SIC 3845 companies
 
-### segments（真实数据才发现的第 8 个主键字段）
-- 真实 2025Q4 数据的 NUM 主键是 8 个字段：adsh, tag, version, ddate, qtrs, uom, segments, coreg（旧版文档只写了 7 个）
-- `segments` = 分部拆分的数字（按产品线、地区等）；为空 = 公司总数
-- V1 只导入 segments 为空的行，理由同 coreg：防止总数和拆分数混在一起被重复计算
-- SIC 3845 公司里约 45% 的行（7,127 / 15,796）是拆分数字
-- 局限：V1 回答不了分部问题（如「美国市场营收多少」）→ V2
-- 结果：coreg 和 segments 都不放进表，financial_facts 主键为 6 个字段
+### segments (an 8th key field, found only in the real data)
+- In the real 2025Q4 data the NUM primary key has 8 fields: adsh, tag, version, ddate, qtrs, uom, segments, coreg (older docs listed only 7)
+- `segments` = numbers broken down by segment (product line, region, etc.); empty = company total
+- V1 imports only rows with empty segments, for the same reason as coreg: avoid double counting totals and breakdowns
+- About 45% of rows for SIC 3845 companies (7,127 / 15,796) are breakdowns
+- Limitation: V1 cannot answer segment questions (e.g. "What was US revenue?") → V2
+- Result: neither coreg nor segments is stored; the financial_facts primary key has 6 fields
 
 ## 9. Company name changes
-- companies 存最新一份财报里的名字；V1 只有一个季度包，几乎不会遇到改名 → 写进局限
-- 真正的坑是名字匹配：SEC 存正式名称（如 `NVIDIA CORP`），用户说「Nvidia」→ companies 加 `ticker` 列（如 NVDA）
-- ticker 来源：手工填，或 SEC 的 CIK→ticker 对照文件（`company_tickers.json`，下载前核实）
-- 评测里测：用户说简称/ticker，能否查对
-- schema.md 需更新：companies 加 `ticker`（v0.2）
+- companies stores the name from the latest filing; with only one quarterly package, renames almost never occur → listed as a limitation
+- The real trap is name matching: SEC stores the official name (e.g. `NVIDIA CORP`), but users say "Nvidia" → add a `ticker` column to companies (e.g. NVDA)
+- Ticker source: filled in by hand, or SEC's CIK→ticker file (`company_tickers.json`, verify before downloading)
+- Eval should test: when the user gives a short name or ticker, is the right company found
+- Update schema.md: add `ticker` to companies (v0.2)
 
 ## 10. Company selection
-行业：医疗器械（ECG、PPG、血氧、监护等设备公司）
-- 不选金融行业：银行/保险没有常规「营收」，会把 V1 难度加在错误的地方
+Industry: medical devices (companies making ECG, PPG, pulse-oximetry, patient-monitoring and similar devices)
+- Not finance: banks and insurers have no standard "revenue" line, which would put V1's difficulty in the wrong place
 
-选公司规则（用数据定，可复现）：
-1. SIC 代码为医疗器械相关（初步：3845 电子医疗设备、3841 手术和医疗器械 —— 下载后核实）
-2. form 只要 `10-K` / `10-Q`
-3. 在 2025Q4 包里有财报，coreg 为空
-4. 超过 30 家 → 按**总资产**（tag `Assets`，最新一期）取前 20。不按营收：营收对应多个 tag，导入前无法统一排序（2026-10-18 改）
-5. 排除综合集团（如 3M），写在代码的 `EXCLUDE_CIKS` 名单里
-6. 下载后先看规则选出了哪些公司，再决定是否手动补漏
-7. 核实结果（2026-10-17）：3845 有 36 家、3841 有 132 家提交了 10-K/10-Q
+Company selection rules (data-driven, reproducible):
+1. SIC code related to medical devices (initially 3845 electromedical apparatus, 3841 surgical and medical instruments — verify after download)
+2. form is `10-K` / `10-Q` only
+3. Has a filing in the 2025Q4 package, with empty coreg
+4. More than 30 companies → take the top 20 by **total assets** (tag `Assets`, latest period). Not by revenue: revenue maps to several tags and can't be ranked consistently before loading (changed 2026-10-18)
+5. Exclude conglomerates (e.g. 3M), listed in `EXCLUDE_CIKS` in the code
+6. After download, first check which companies the rules select, then decide whether to add any by hand
+7. Verified (2026-10-17): 36 companies under 3845 and 132 under 3841 filed a 10-K/10-Q
 
-导入脚本规则：每次运行先清空 3 张表再插入（可重复运行）；pandas 读文件，psycopg 写库
+Loader rules: each run truncates the 3 tables before inserting (safe to re-run); pandas reads the files, psycopg writes to the database
 
-注意：小公司多、不少亏损 → 净利率为负，是很好的测试用例
+Note: many small companies are loss-making → negative net margin, which makes good test cases
