@@ -1,5 +1,7 @@
 # Reliable Text-to-SQL Data QA Assistant
 
+[![tests](https://github.com/xuchiyu1/reliable-text-to-sql/actions/workflows/test.yml/badge.svg)](https://github.com/xuchiyu1/reliable-text-to-sql/actions/workflows/test.yml)
+
 Ask a question about medical-device companies' financial statements in plain English and get an answer computed from SEC filings, together with the SQL that produced it. The assistant refuses questions the data cannot answer, and generated SQL passes three safety layers before it touches the database.
 
 ## Problem
