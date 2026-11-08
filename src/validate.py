@@ -4,7 +4,8 @@ from sqlglot import exp
 
 ALLOWED_TABLES = {"companies", "filings", "financial_facts"}
 FORBIDDEN = (exp.Insert, exp.Update, exp.Delete, exp.Drop, exp.Create)   # statements that change data
-BANNED_FUNCS = {"pg_sleep", "pg_read_file", "pg_read_binary_file", "pg_ls_dir", "lo_import", "dblink"}   # can hang the database or read server files
+BANNED_FUNCS = {"pg_sleep", "pg_read_file", "pg_read_binary_file", "pg_ls_dir", "lo_import", "dblink",
+                "current_setting", "set_config"}   # can hang the database, read server files, or read/change settings
 
 def validate(sql):
     """Return None if the SQL is allowed, otherwise the reason it was blocked."""
@@ -25,6 +26,8 @@ def validate(sql):
             return f"function not allowed: {func.name}"
     cte_names = {cte.alias for cte in tree.find_all(exp.CTE)}   # names defined in WITH are allowed too
     for table in tree.find_all(exp.Table):
+        if table.db and table.db != "public":            # only the public schema; blocks other_schema.companies
+            return f"schema not allowed: {table.db}"
         if table.name not in ALLOWED_TABLES | cte_names:
             return f"table not allowed: {table.name}"
     return None
@@ -36,15 +39,3 @@ def add_limit(sql):
     if tree.args.get("limit") is None:
         tree = tree.limit(MAX_ROWS)
     return tree.sql(dialect="postgres")
-
-if __name__ == "__main__":
-    tests = [
-        "SELECT name FROM companies",                                  # should pass
-        "WITH x AS (SELECT * FROM filings) SELECT * FROM x",           # should pass (CTE)
-        "DROP TABLE companies",                                        # should block: not a SELECT
-        "SELECT 1 FROM companies; DELETE FROM filings",                # should block: two statements
-        "SELECT * FROM pg_user",                                       # should block: system table
-        "SELECT name FROM companies WHERE pg_sleep(10) IS NULL",       # should block: dangerous function
-    ]
-    for sql in tests:
-        print(validate(sql) or "OK", "|", sql)
