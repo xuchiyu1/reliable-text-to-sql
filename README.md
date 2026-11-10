@@ -58,17 +58,39 @@ How accuracy improved (each fix came from a diagnosed failure):
 Failure taxonomy found along the way: missing data, schema doc lacking types, brittle grader, SQL execution error, domain gap (fiscal year, comparative rows), no refusal, nondeterminism.
 
 ## Run it
+
+### Option A: Docker (recommended)
+Requirements: Docker, an Anthropic API key, and the SEC 2025Q4 package in `data/raw/` (`2025q4/{sub,num}.txt` and `company_tickers.json`).
+```bash
+cat > .env <<EOF
+ANTHROPIC_API_KEY=...
+POSTGRES_PASSWORD=$(openssl rand -hex 16)
+READER_PASSWORD=$(openssl rand -hex 16)
+EOF
+docker compose up -d --build      # Postgres 18 + API; tables and the read-only role are created on first start
+docker compose run --rm loader    # one-off load from data/raw/ (owner role)
+curl localhost:8000/health
+curl -X POST localhost:8000/ask -H "Content-Type: application/json" \
+     -d '{"question": "What was Dexcom revenue in Q3 2025?"}'
+```
+The API connects as the read-only role `text2sql_reader`; only the `loader` service gets the owner role. Interactive docs: `http://localhost:8000/docs`.
+
+`POST /ask` returns JSON with `status` = `ok` / `empty` / `cannot_answer` / `error`, plus `sql`, `columns`, `rows`, `fixes`. Empty or over-500-character questions get `422` before any model call.
+
+### Option B: local Python
 Requirements: Python 3.12, PostgreSQL, an Anthropic API key.
 ```bash
 python -m venv .venv && source .venv/bin/activate
-pip install anthropic python-dotenv psycopg pandas sqlglot
+pip install -r requirements.txt
 echo "ANTHROPIC_API_KEY=..." > .env
 createdb sec_fsds && psql -d sec_fsds -f sql/create_tables.sql
 python src/load_data.py          # expects data/raw/2025q4/{sub,num}.txt and data/raw/company_tickers.json
 python src/app.py "What was Dexcom's revenue in Q3 2025?"
+python -m uvicorn api:app --app-dir src     # same API on localhost:8000
 python src/evaluate.py
+python -m pytest                 # validator + grader unit tests (also run in CI)
 ```
-Create the read-only role once (see the Safety section): `CREATE ROLE text2sql_reader LOGIN;` then grant `CONNECT`, `USAGE ON SCHEMA public`, and `SELECT` on `companies`, `filings`, `financial_facts`.
+Create the read-only role once (see the Safety section): `CREATE ROLE text2sql_reader LOGIN;` then grant `CONNECT`, `USAGE ON SCHEMA public`, and `SELECT` on `companies`, `filings`, `financial_facts`. Connection strings can be overridden with `DATABASE_URL` (reader) and `LOADER_DATABASE_URL` (owner).
 
 ## Limitations (V1)
 - One quarterly package (2025Q4): no quarter-over-quarter or multi-year trends. Only one company (Becton Dickinson, Sept fiscal year end) has a 10-K in this package; the rest have 10-Qs (e.g. Dexcom's FY2025 10-K is filed in 2026), so "fiscal year 2025" questions often correctly return no data.

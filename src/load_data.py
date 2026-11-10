@@ -1,3 +1,4 @@
+import os
 import pandas as pd
 import psycopg
 import json
@@ -31,7 +32,7 @@ def load_num(adsh_list):
     return pd.concat(parts)
 TOP_N = 20
 EXCLUDE_CIKS = ["66740"]   # 3M: a conglomerate, not a pure medical-device company
-DB = "dbname=sec_fsds"
+DB = os.environ.get("LOADER_DATABASE_URL", "dbname=sec_fsds")   # owner role, can write; Docker sets LOADER_DATABASE_URL
 def pick_top_companies(sub, num):
     
     # 1. keep only rows with tag Assets

@@ -1,0 +1,43 @@
+services:
+  db:
+    image: postgres:18
+    environment:
+      POSTGRES_DB: sec_fsds
+      POSTGRES_USER: owner
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+      READER_PASSWORD: ${READER_PASSWORD:?set READER_PASSWORD in .env}
+    volumes:
+      - pgdata:/var/lib/postgresql
+      - ./sql/create_tables.sql:/docker-entrypoint-initdb.d/01_create_tables.sql:ro
+      - ./docker/init_reader.sh:/docker-entrypoint-initdb.d/02_init_reader.sh:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U owner -d sec_fsds"]
+      interval: 2s
+      retries: 30
+
+  app:
+    build: .
+    image: reliable-text-to-sql
+    env_file: .env                 # ANTHROPIC_API_KEY is read from the file, not the shell
+    environment:
+      DATABASE_URL: host=db dbname=sec_fsds user=text2sql_reader password=${READER_PASSWORD}
+    ports:
+      - "8000:8000"
+    depends_on:
+      db:
+        condition: service_healthy
+
+  loader:                          # one-off: docker compose run --rm loader
+    image: reliable-text-to-sql
+    profiles: ["tools"]
+    environment:
+      LOADER_DATABASE_URL: host=db dbname=sec_fsds user=owner password=${POSTGRES_PASSWORD}
+    volumes:
+      - ./data/raw:/app/data/raw:ro
+    command: ["python", "src/load_data.py"]
+    depends_on:
+      db:
+        condition: service_healthy
+
+volumes:
+  pgdata:

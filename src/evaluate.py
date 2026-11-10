@@ -1,10 +1,11 @@
+import os
 from grader import clean_sql, is_correct
 from validate import validate, add_limit
 
 import psycopg
 from ask import ask, fix     # ask() queries Claude; fix() repairs SQL that failed
 
-DB = "dbname=sec_fsds user=text2sql_reader"   # read-only role: the database only allows SELECT (safety layer 3)
+DB = os.environ.get("DATABASE_URL", "dbname=sec_fsds user=text2sql_reader")   # read-only role (safety layer 3); Docker sets DATABASE_URL
 
 # Eval cases: question + hand-written gold SQL (source of truth)
 CASES = [
