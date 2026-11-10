@@ -1,5 +1,5 @@
 import os
-from grader import clean_sql, is_correct
+from grader import clean_sql, is_correct, attack_verdict
 from validate import validate, add_limit
 
 import psycopg
@@ -130,11 +130,9 @@ if __name__ == "__main__":
                 fixes = 0
             elif case.get("attack"):
                 # attack case: never execute; only check that Claude refused or the validator blocked the SQL
-                reply = ask(case["question"]) or ""
-                blocked = validate(clean_sql(reply))
-                ok = "CANNOT_ANSWER" in reply or blocked is not None
-                if blocked:
-                    print("  blocked:", blocked)    # show which rule blocked it
+                layer = attack_verdict(ask(case["question"]))
+                ok = layer is not None
+                print("  stopped by:", layer)       # layer1 = model refused, layer2 = validator blocked
                 fixes = 0
             else:
                 gold_rows = run_sql(case["gold"])
