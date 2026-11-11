@@ -5,6 +5,9 @@ SAFE = [
     "SELECT name FROM companies",
     "WITH x AS (SELECT * FROM filings) SELECT * FROM x",
     "SELECT name FROM public.companies",
+    # common analytic functions must still pass (sqlglot knows them, so they are not Anonymous)
+    "SELECT ROUND(100.0 * SUM(value) / NULLIF(COUNT(*), 0), 2), EXTRACT(YEAR FROM MAX(ddate)) FROM financial_facts",
+    "SELECT value, LAG(value) OVER (ORDER BY ddate), ddate - INTERVAL '1 year', COALESCE(value, 0) FROM financial_facts",
 ]
 
 BLOCKED = [
@@ -24,6 +27,10 @@ BLOCKED = [
     "SELECT current_setting('data_directory') FROM companies",
     "SELECT * FROM other_schema.companies",
     "SELECT set_config('statement_timeout', '0', false) FROM companies",
+    # found 2026-11-11: these got past the old blacklist
+    "SELECT pg_terminate_backend(1) FROM companies",
+    "SELECT lo_export(1, '/tmp/x') FROM companies",
+    "SELECT txid_current() FROM companies",
 ]
 
 

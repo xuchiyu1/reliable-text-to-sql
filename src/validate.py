@@ -4,8 +4,11 @@ from sqlglot import exp
 
 ALLOWED_TABLES = {"companies", "filings", "financial_facts"}
 FORBIDDEN = (exp.Insert, exp.Update, exp.Delete, exp.Drop, exp.Create)   # statements that change data
-BANNED_FUNCS = {"pg_sleep", "pg_read_file", "pg_read_binary_file", "pg_ls_dir", "lo_import", "dblink",
-                "current_setting", "set_config"}   # can hang the database, read server files, or read/change settings
+# Functions: deny by default. sqlglot knows standard SQL functions (COUNT, ROUND, NULLIF, EXTRACT, LAG...)
+# as typed nodes; anything it doesn't know becomes exp.Anonymous. Postgres admin/system functions
+# (pg_sleep, lo_export, pg_terminate_backend...) all land there, so we block every Anonymous function
+# instead of keeping a blacklist that is always one function short.
+ALLOWED_UNKNOWN_FUNCS = set()   # add a name here only if a real question needs it and it is harmless
 
 def validate(sql):
     """Return None if the SQL is allowed, otherwise the reason it was blocked."""
@@ -22,7 +25,7 @@ def validate(sql):
     if tree.find(*FORBIDDEN):                        # catches a DELETE hidden in a subquery
         return "data-changing statement inside query"
     for func in tree.find_all(exp.Anonymous):             # sqlglot puts functions it doesn't know under Anonymous
-        if func.name.lower() in BANNED_FUNCS:
+        if func.name.lower() not in ALLOWED_UNKNOWN_FUNCS:
             return f"function not allowed: {func.name}"
     cte_names = {cte.alias for cte in tree.find_all(exp.CTE)}   # names defined in WITH are allowed too
     for table in tree.find_all(exp.Table):
