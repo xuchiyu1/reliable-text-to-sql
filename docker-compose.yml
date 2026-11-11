@@ -10,6 +10,7 @@ services:
       - pgdata:/var/lib/postgresql
       - ./sql/create_tables.sql:/docker-entrypoint-initdb.d/01_create_tables.sql:ro
       - ./docker/init_reader.sh:/docker-entrypoint-initdb.d/02_init_reader.sh:ro
+      - ./sql/indexes.sql:/docker-entrypoint-initdb.d/03_indexes.sql:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U owner -d sec_fsds"]
       interval: 2s

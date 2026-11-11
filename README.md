@@ -38,12 +38,19 @@ Source: SEC Financial Statement Data Sets, 2025Q4 (20 medical-device companies).
 | 3. Database | Role `text2sql_reader` has only `SELECT` on the 3 tables; read-only transaction; 5 s statement timeout | With the validator removed, the database alone still stops **10/12** attacks (read-only transaction, `permission denied`, timeout). The 2 that run (`pg_terminate_backend`, `set_config`) are why layer 2 exists. The 3-table cross join passes layer 2 and is stopped only by the timeout |
 
 ## Evaluation
-Execution accuracy on a fixed set of 13 questions, each run 3 times because LLM output is nondeterministic:
-- q01–q05, q07, q08: answerable (single value, ranking, YoY growth, ratio, filters). Graded against hand-written gold SQL; numbers match within 0.1%; ranking questions are checked in order.
-- q06, q09, q10: must refuse (stock price, CEO name, market share).
-- q11–q13: attacks (delete rows, prompt injection with `DROP TABLE`, read `pg_shadow`). Pass = refused or blocked; attack SQL is never executed.
+Execution accuracy on a fixed set of 26 questions, each run 3 times because LLM output is nondeterministic (`RUNS=3 python src/evaluate.py`):
+- 17 answerable (q01–q05, q07, q08, q14–q23, q26): single value, ranking, YoY growth, ratio, filter, cumulative and annual (`qtrs = 3` / `4`). Graded against hand-written gold SQL; numbers match within 0.1%; ranking questions are checked in order.
+- 6 must refuse (q06, q09, q10, q24, q25): stock price, CEO name, market share, forecast, customer list.
+- 3 attacks (q11–q13): delete rows, prompt injection with `DROP TABLE`, read `pg_shadow`. Pass = refused or blocked; attack SQL is never executed. The eval logs which layer stopped each one.
 
-Final result (2026-11-01, 3 runs): **39/39**. This means the two known flaky patterns did not recur on this set; it is not a claim of 100% accuracy in general.
+V1.1 added q14–q26 (2026-11-11) because 9 of the first 13 questions asked about the same 3 companies. The new ones cover 9 more companies and include traps: a net loss (negative value), a ticker instead of a name (`SYK`), companies that report revenue under different tags, a ranking where #2 (Becton Dickinson) only filed a 10-K, and an annual question that needs `qtrs = 4`.
+
+| Date | Questions | Runs | Result |
+|---|---|---|---|
+| 2026-11-01 (V1) | 13 | 3 | **39/39** |
+| 2026-11-11 (V1.1) | 26 | 3 | **78/78** (1 answer needed one automatic repair: q26, run 3) |
+
+This means the known failure patterns did not recur on this set; it is not a claim of 100% accuracy in general. The model never reached layer 2 here: all attack questions stopped at layer 1, so layer 2 and 3 are measured separately (see Safety).
 
 How accuracy improved (each fix came from a diagnosed failure):
 
@@ -56,6 +63,22 @@ How accuracy improved (each fix came from a diagnosed failure):
 | + glossary rule | filter `ddate` to exclude prior-period comparative rows | fixed row-count mismatch → 50/50 (5 runs) |
 
 Failure taxonomy found along the way: missing data, schema doc lacking types, brittle grader, SQL execution error, domain gap (fiscal year, comparative rows), no refusal, nondeterminism.
+
+## Performance (indexes)
+`EXPLAIN ANALYZE`, median of 7 runs (`python src/bench_indexes.py`), before vs after [`sql/indexes.sql`](sql/indexes.sql):
+
+| Query shape | 20 companies, 5,491 facts | All 5,296 companies, 1,317,941 facts |
+|---|---|---|
+| one company, one metric (q14) | 0.03 → 0.02 ms | 0.70 → 0.26 ms |
+| year over year, self-join (q19) | 0.03 → 0.05 ms | 0.71 → 0.28 ms |
+| all companies, one metric (q18) | 0.17 → 0.07 ms | **105.85 → 19.83 ms** |
+
+- At the project's real size (5,491 rows) indexes make no practical difference: every query is under 0.2 ms. So the indexes were tested on the full 2025Q4 package instead (`src/load_scale.py` bulk-loads every 10-K/10-Q filer with `COPY` into a separate `sec_fsds_scale` database, about 27 s).
+- The primary key starts with `adsh`, so it already serves "one filing → its numbers". For "one metric across all companies" (rankings, filters) PostgreSQL 18 still used it through a skip scan, but that took 5,857 separate index searches (about 500 ms, single run on a cold cache). A composite index led by `tag` needs one search: about 5× faster in the benchmark.
+- Cost of that index: 1.5 s to build, 19 MB (about 12% of the 160 MB table), and every write must update it. The agent only reads; writes happen only in the batch loader, so the trade-off favours the index.
+- Timings vary between runs (cache state): an earlier run measured 160 → 21 ms for q18.
+- `filings(cik)`: PostgreSQL doesn't index foreign keys automatically, and every company → filings join uses it.
+- Not indexed: `companies.name`. The model matches names with `ILIKE '%masimo%'`, and a leading wildcard can't use a B-tree index.
 
 ## Run it
 
@@ -92,14 +115,15 @@ python -m pytest                 # validator + grader unit tests (also run in CI
 ```
 Create the read-only role once (see the Safety section): `CREATE ROLE text2sql_reader LOGIN;` then grant `CONNECT`, `USAGE ON SCHEMA public`, and `SELECT` on `companies`, `filings`, `financial_facts`. Connection strings can be overridden with `DATABASE_URL` (reader) and `LOADER_DATABASE_URL` (owner).
 
-## Limitations (V1)
+## Limitations
 - One quarterly package (2025Q4): no quarter-over-quarter or multi-year trends. Only one company (Becton Dickinson, Sept fiscal year end) has a 10-K in this package; the rest have 10-Qs (e.g. Dexcom's FY2025 10-K is filed in 2026), so "fiscal year 2025" questions often correctly return no data.
-- 13 eval questions is small; results show the method works, not general accuracy.
+- 26 eval questions is still small; results show the method works, not general accuracy.
 - Only one model (Haiku) tested so far.
 
-## Next (V1.1)
-- 20–30 eval questions, including attack SQL that reaches layer 2
+## Next (V1.2)
 - Compare Haiku vs Opus on accuracy and cost
+- Load several quarterly packages (quarter-over-quarter, multi-year trends)
+- Deploy the API to a cloud host
 - Ask a clarifying question when the period is ambiguous
 
 ## V1 does NOT include
