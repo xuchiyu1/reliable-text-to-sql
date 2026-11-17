@@ -1,6 +1,7 @@
-# Schema v0.3
+# Schema v0.4
 
 ## Changelog
+- v0.4 (2026-11-14): load 2 quarterly packages (2025q3 + 2025q4). The same number now appears in several filings, so add the view `latest_facts` (one row per company, tag, period; latest filing wins). The agent queries `latest_facts`; `financial_facts` is raw storage and is blocked by the validator.
 - v0.3 (2026-10-29): add column types; ddate is DATE (not SEC yyyymmdd integer) — fixes `ddate - 10000` failure seen in 5-run eval.
 - v0.2 (2026-10-18): real 2025Q4 data has an 8-field NUM key (`segments` added); V1 imports only rows with empty `segments` and empty `coreg`, so financial_facts drops both and uses a 6-field PK; companies gets `ticker` for name matching. See `requirements.md` §8–9.
 - v0.1 (2026-10-16): first design, 3 tables.
@@ -46,7 +47,23 @@ One row = one company (split from SUB to remove repeated company info)
 - PK: adsh
 - FK: cik → companies.cik
 
-### financial_facts
+### latest_facts (VIEW — query this for numbers)
+One row = one company-level number for one period. Built from financial_facts + filings: when several filings report the same number, only the value from the most recently filed filing is kept.
+
+| column | type | meaning |
+|---|---|---|
+| cik | INTEGER | company ID (join to companies.cik) |
+| tag | TEXT | metric tag (e.g. Revenues) |
+| ddate | DATE | period end date (a PostgreSQL DATE; for the same period last year use `ddate - INTERVAL '1 year'`; the previous quarter is the latest earlier `ddate` for the same cik, tag and qtrs) |
+| qtrs | INTEGER | number of quarters covered (0 = balance sheet point in time, 1 = one quarter, 4 = full year) |
+| uom | TEXT | unit of measure |
+| value | NUMERIC | value |
+| adsh | TEXT | the filing the value was taken from |
+| filed | DATE | when that filing was filed |
+
+- Unique per (cik, tag, ddate, qtrs, uom). Different periods of the same metric are separate rows.
+
+### financial_facts (raw storage — not queried by the agent)
 One row = one company-level number in a filing (from NUM, only rows with empty `segments` and empty `coreg`)
 
 | column | type | meaning |
@@ -65,3 +82,4 @@ One row = one company-level number in a filing (from NUM, only rows with empty `
 ## 4. Relationships
 - companies 1 — N filings (via cik)
 - filings 1 — N financial_facts (via adsh)
+- companies 1 — N latest_facts (via cik)

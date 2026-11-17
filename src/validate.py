@@ -2,7 +2,8 @@
 import sqlglot
 from sqlglot import exp
 
-ALLOWED_TABLES = {"companies", "filings", "financial_facts"}
+# financial_facts is NOT here: it holds duplicate rows across filings, so the model must use latest_facts
+ALLOWED_TABLES = {"companies", "filings", "latest_facts"}
 FORBIDDEN = (exp.Insert, exp.Update, exp.Delete, exp.Drop, exp.Create)   # statements that change data
 # Functions: deny by default. sqlglot knows standard SQL functions (COUNT, ROUND, NULLIF, EXTRACT, LAG...)
 # as typed nodes; anything it doesn't know becomes exp.Anonymous. Postgres admin/system functions

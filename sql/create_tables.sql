@@ -1,3 +1,4 @@
+DROP VIEW IF EXISTS latest_facts;      -- the view depends on the tables, so drop it first
 DROP TABLE IF EXISTS financial_facts;
 DROP TABLE IF EXISTS filings;
 DROP TABLE IF EXISTS companies;

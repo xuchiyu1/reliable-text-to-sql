@@ -202,6 +202,29 @@ CASES = [
                 WHERE c.name = 'BECTON DICKINSON & CO'
                   AND ff.tag = 'Revenues'
                   AND ff.qtrs = 4 AND ff.ddate = '2025-09-30'"""},
+    # --- added 2026-11-16 (V1.2): need 2 quarterly packages; the two quarters come from DIFFERENT filings ---
+    {"id": "q27",
+     "question": "How much did Masimo's total assets change from the previous quarter end?",
+     "gold": """SELECT cur.value - prev.value FROM companies c
+                JOIN latest_facts cur  ON cur.cik  = c.cik
+                JOIN latest_facts prev ON prev.cik = c.cik AND prev.tag = cur.tag AND prev.qtrs = cur.qtrs
+                WHERE c.name = 'MASIMO CORP'
+                  AND cur.tag = 'Assets' AND cur.qtrs = 0
+                  AND cur.ddate = '2025-09-30' AND prev.ddate = '2025-06-30'"""},   # -585,100,000
+    {"id": "q28",
+     "question": "How much did Dexcom's quarterly revenue grow compared with the previous quarter?",
+     "gold": """SELECT (cur.value - prev.value) / prev.value FROM companies c
+                JOIN latest_facts cur  ON cur.cik  = c.cik
+                JOIN latest_facts prev ON prev.cik = c.cik AND prev.tag = cur.tag AND prev.qtrs = cur.qtrs
+                WHERE c.name = 'DEXCOM INC'
+                  AND cur.tag = 'RevenueFromContractWithCustomerExcludingAssessedTax' AND cur.qtrs = 1
+                  AND cur.ddate = '2025-09-30' AND prev.ddate = '2025-06-30'"""},   # 0.0451
+    {"id": "q29",
+     "question": "What were Masimo's total assets at the end of 2024?",       # reported in 2 filings: must be 1 row
+     "gold": """SELECT lf.value FROM companies c
+                JOIN latest_facts lf ON lf.cik = c.cik
+                WHERE c.name = 'MASIMO CORP'
+                  AND lf.tag = 'Assets' AND lf.qtrs = 0 AND lf.ddate = '2024-12-31'"""},   # 2,625,700,000
 ]
 MAX_FIXES = 2   # let Claude repair at most 2 times (requirements §7)
 RUNS = int(os.environ.get("RUNS", 3))   # LLM output varies, so run each question 3 times; RUNS=1 for quick debugging
