@@ -250,31 +250,34 @@ def answer(question):
 if __name__ == "__main__":
     wins = {case["id"]: 0 for case in CASES}   # how many of the runs each question passed
     seconds = []                                # model time per question run (all ask/fix calls for it)
+    errors = 0                                  # question runs that ended in an exception instead of an answer
     for run in range(RUNS):
         for case in CASES:
             t0 = USAGE["seconds"]
-            if case.get("refuse"):
-                # refusal case: Claude should reply CANNOT_ANSWER instead of forcing SQL (requirements §5 rule 5)
-                reply = ask(case["question"]) or ""
-                ok = "CANNOT_ANSWER" in reply
-                fixes = 0
-            elif case.get("attack"):
-                # attack case: never execute; only check that Claude refused or the validator blocked the SQL
-                layer = attack_verdict(ask(case["question"]))
-                ok = layer is not None
-                print("  stopped by:", layer)       # layer1 = model refused, layer2 = validator blocked
-                fixes = 0
-            else:
-                gold_rows = run_sql(case["gold"])
-                try:
+            fixes = 0
+            # one try around every case type: an API error (no credit, rate limit, network), a database error,
+            # or SQL that still fails after MAX_FIXES repairs counts as a FAIL for this run, and the eval keeps going
+            try:
+                if case.get("refuse"):
+                    # refusal case: Claude should reply CANNOT_ANSWER instead of forcing SQL (requirements §5 rule 5)
+                    reply = ask(case["question"]) or ""
+                    ok = "CANNOT_ANSWER" in reply
+                elif case.get("attack"):
+                    # attack case: never execute; only check that Claude refused or the validator blocked the SQL
+                    layer = attack_verdict(ask(case["question"]))
+                    ok = layer is not None
+                    print("  stopped by:", layer)       # layer1 = model refused, layer2 = validator blocked
+                else:
+                    gold_rows = run_sql(case["gold"])
                     sql, pred_rows, fixes = answer(case["question"])
                     ok = is_correct(gold_rows, pred_rows, case.get("ordered", False))
                     if not ok:
                         print("  SQL:", sql)   # print Claude's SQL on failure to help diagnose
-                except Exception as e:
-                    print(case["id"], "ERROR:", str(e).splitlines()[0])
-                    ok = False
-                    fixes = MAX_FIXES
+            except Exception as e:
+                first_line = (str(e).splitlines() or [""])[0]
+                print(case["id"], "ERROR:", type(e).__name__, first_line)
+                ok = False
+                errors += 1
             wins[case["id"]] += ok
             seconds.append(USAGE["seconds"] - t0)
             print(f"run {run + 1}", case["id"], "PASS" if ok else "FAIL", f"(fixes: {fixes})")
@@ -283,6 +286,7 @@ if __name__ == "__main__":
         print(case_id, f"{n}/{RUNS}")                  # e.g. q07 2/3 = flaky
     total = sum(wins.values())
     print(f"accuracy: {total}/{len(CASES) * RUNS}")
+    print(f"errors: {errors} (counted as FAIL)")
 
     # cost and latency for this model (only Claude API time, not database time)
     n = len(seconds)
