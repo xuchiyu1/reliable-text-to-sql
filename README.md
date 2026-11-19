@@ -82,6 +82,25 @@ How accuracy improved (each fix came from a diagnosed failure):
 
 Failure taxonomy found along the way: missing data, schema doc lacking types, brittle grader, SQL execution error, domain gap (fiscal year, comparative rows), no refusal, nondeterminism.
 
+## Model choice: Haiku vs Opus
+Same 29 questions × 3 runs, same prompt, effort `medium` for both (`MODEL=claude-opus-5-5 RUNS=3 python src/evaluate.py`; the script prints tokens, cost and model latency). Run on 2026-11-18.
+
+| | Claude Haiku 5.5 | Claude Opus 5.5 | Opus / Haiku |
+|---|---|---|---|
+| Accuracy | **87/87** | **87/87** | same |
+| API calls (87 = no repairs needed) | 87 | 87 | |
+| Input tokens | 205,578 | 205,578 | same prompt |
+| Output tokens (incl. thinking) | 55,499 | 50,524 | 0.9× |
+| Cost, whole run | $0.048 | $1.83 | **~38×** |
+| Cost per question | $0.00056 | $0.021 | |
+| Model latency per question (mean / median / max) | 2.79 / 2.55 / 6.34 s | 5.25 / 5.44 / 11.91 s | ~2× slower |
+
+Prices used: list prices per 1M tokens, Haiku 5.5 $0.10 in / $0.50 out, Opus 5.5 $4 / $20 (`PRICES` in `src/evaluate.py`). Latency counts only Claude API time, not the database.
+
+**Decision: keep Haiku as the default.** On this eval Opus gives no accuracy gain for ~38× the cost and twice the wait.
+- Caveat: both models score 100%, so this eval can't tell them apart. It shows Haiku is *enough for these 29 questions*, not that Opus is no better. Harder questions (multi-step, ambiguous periods) are where a gap would show, and the comparison should be re-run when they're added.
+- Input is ~80% of tokens because every call resends the full schema doc. Prompt caching is the next cost lever to try; it wasn't used here, so both models were measured the same way.
+
 ## Performance (indexes)
 `EXPLAIN ANALYZE`, median of 7 runs (`python src/bench_indexes.py`), before vs after [`sql/indexes.sql`](sql/indexes.sql):
 
@@ -137,10 +156,10 @@ Create the read-only role once (see the Safety section): `CREATE ROLE text2sql_r
 ## Limitations
 - Two quarterly packages (2025Q3, 2025Q4): previous-quarter and same-quarter-last-year questions work, but Q1 2025 and longer trends are not loaded. Only one company (Becton Dickinson, Sept fiscal year end) has a 10-K in the 2025Q4 package; the rest have 10-Qs (e.g. Dexcom's FY2025 10-K is filed in 2026), so "fiscal year 2025" questions often correctly return no data.
 - 29 eval questions is still small; results show the method works, not general accuracy.
-- Only one model (Haiku) tested so far.
+- Model comparison covers two models on 29 questions where both score 100% (see Model choice).
 
 ## Next (V1.2)
-- Compare Haiku vs Opus on accuracy and cost
+- ~~Compare Haiku vs Opus on accuracy and cost~~ done (see Model choice)
 - ~~Load several quarterly packages~~ done (see Data pipeline)
 - Deploy the API to a cloud host
 - Ask a clarifying question when the period is ambiguous

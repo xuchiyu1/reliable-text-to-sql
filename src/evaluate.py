@@ -2,7 +2,7 @@ import os
 from grader import clean_sql, is_correct, attack_verdict
 from validate import validate, add_limit
 from db import run_sql       # safety layer 3: read-only role, read-only transaction, 5 s timeout
-from ask import ask, fix     # ask() queries Claude; fix() repairs SQL that failed
+from ask import ask, fix, MODEL, EFFORT, USAGE     # ask() queries Claude; fix() repairs SQL that failed
 
 # Eval cases: question + hand-written gold SQL (source of truth)
 CASES = [
@@ -227,6 +227,8 @@ CASES = [
                   AND lf.tag = 'Assets' AND lf.qtrs = 0 AND lf.ddate = '2024-12-31'"""},   # 2,625,700,000
 ]
 MAX_FIXES = 2   # let Claude repair at most 2 times (requirements §7)
+# USD per 1M tokens (input, output), Anthropic list prices as of 2026-11; check https://claude.com/pricing before quoting
+PRICES = {"claude-haiku-5-5": (0.10, 0.50), "claude-opus-5-5": (4.00, 20.00)}
 RUNS = int(os.environ.get("RUNS", 3))   # LLM output varies, so run each question 3 times; RUNS=1 for quick debugging
 
 def answer(question):
@@ -247,8 +249,10 @@ def answer(question):
             sql = clean_sql(fix(question, sql, str(e)) or "")
 if __name__ == "__main__":
     wins = {case["id"]: 0 for case in CASES}   # how many of the runs each question passed
+    seconds = []                                # model time per question run (all ask/fix calls for it)
     for run in range(RUNS):
         for case in CASES:
+            t0 = USAGE["seconds"]
             if case.get("refuse"):
                 # refusal case: Claude should reply CANNOT_ANSWER instead of forcing SQL (requirements §5 rule 5)
                 reply = ask(case["question"]) or ""
@@ -272,9 +276,20 @@ if __name__ == "__main__":
                     ok = False
                     fixes = MAX_FIXES
             wins[case["id"]] += ok
+            seconds.append(USAGE["seconds"] - t0)
             print(f"run {run + 1}", case["id"], "PASS" if ok else "FAIL", f"(fixes: {fixes})")
 
     for case_id, n in wins.items():
         print(case_id, f"{n}/{RUNS}")                  # e.g. q07 2/3 = flaky
     total = sum(wins.values())
     print(f"accuracy: {total}/{len(CASES) * RUNS}")
+
+    # cost and latency for this model (only Claude API time, not database time)
+    n = len(seconds)
+    price_in, price_out = PRICES.get(MODEL, (float("nan"), float("nan")))
+    cost = USAGE["input_tokens"] / 1e6 * price_in + USAGE["output_tokens"] / 1e6 * price_out
+    seconds.sort()
+    print(f"model: {MODEL}  effort: {EFFORT}  API calls: {USAGE['calls']}")
+    print(f"tokens: input {USAGE['input_tokens']:,}  output {USAGE['output_tokens']:,}")
+    print(f"cost: ${cost:.4f} total, ${cost / n:.5f} per question")
+    print(f"model latency per question: mean {sum(seconds) / n:.2f} s, median {seconds[n // 2]:.2f} s, max {seconds[-1]:.2f} s")
