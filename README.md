@@ -130,16 +130,22 @@ cat > .env <<EOF
 ANTHROPIC_API_KEY=...
 POSTGRES_PASSWORD=$(openssl rand -hex 16)
 READER_PASSWORD=$(openssl rand -hex 16)
+APP_API_KEY=$(openssl rand -hex 16)
 EOF
 docker compose up -d --build      # Postgres 18 + API; tables, read-only role, indexes and the view are created on first start
 docker compose run --rm loader    # one-off load from data/raw/ (owner role)
 curl localhost:8000/health
-curl -X POST localhost:8000/ask -H "Content-Type: application/json" \
+curl -X POST localhost:8000/ask -H "Content-Type: application/json" -H "X-API-Key: $(grep APP_API_KEY .env | cut -d= -f2)" \
      -d '{"question": "What was Dexcom revenue in Q3 2025?"}'
 ```
 The API connects as the read-only role `text2sql_reader`; only the `loader` service gets the owner role. Interactive docs: `http://localhost:8000/docs`.
 
-`POST /ask` returns JSON with `status` = `ok` / `empty` / `cannot_answer` / `error`, plus `sql`, `columns`, `rows`, `fixes`. Empty or over-500-character questions get `422` before any model call.
+`POST /ask` returns JSON with `status` = `ok` / `empty` / `cannot_answer` / `error`, plus `sql`, `columns`, `rows`, `periods`, `fixes`. Empty or over-500-character questions get `422` before any model call.
+
+Every `/ask` call spends Anthropic API credit, so the endpoint is guarded ([`src/guard.py`](src/guard.py)):
+- **API key:** requests must send `X-API-Key` equal to `APP_API_KEY`, or they get `401`. If `APP_API_KEY` is not set, every request is refused (fail closed), so a forgotten setting can't leave the endpoint open. The key is compared in constant time.
+- **Rate limit:** at most `ASK_PER_MINUTE` questions per minute (default 10), else `429`. This caps spend even if the key leaks. The limit is per server process, which is enough for one small instance.
+- `/health` stays open for uptime checks.
 
 ### Option B: local Python
 Requirements: Python 3.12, PostgreSQL, an Anthropic API key.
