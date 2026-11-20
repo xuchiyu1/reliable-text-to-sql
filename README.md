@@ -18,17 +18,20 @@ question
   → validate(): single SELECT only, no data-changing statements, table whitelist, auto LIMIT
   → run_sql(): read-only role `text2sql_reader`, read-only transaction, 5 s timeout
   → on SQL error: send the error back to Claude, retry up to 2 times
-  → respond(): table + SQL + source; empty result is reported as missing data, never as 0
+  → respond(): table + period + SQL + source; empty result is reported as missing data, never as 0
 ```
 
 Example:
 ```
 $ python src/app.py "What was Dexcom's revenue in Q3 2025?"
-value
-1209300000.0000
-SQL: SELECT lf.value FROM companies AS c JOIN latest_facts AS lf ON lf.cik = c.cik WHERE c.name ILIKE '%dexcom%' AND lf.ddate = '2025-09-30' ...
-Source: SEC Financial Statement Data Sets, 2025Q3 + 2025Q4 (20 medical-device companies).
+name | tag | value | ddate | qtrs
+DEXCOM INC | RevenueFromContractWithCustomerExcludingAssessedTax | 1209300000.0000 | 2025-09-30 | 1
+Period: single quarter ended 2025-09-30
+SQL: SELECT c.name, lf.tag, lf.value, lf.ddate, lf.qtrs FROM latest_facts AS lf JOIN companies AS c ON c.cik = lf.cik WHERE (c.name ILIKE '%dexcom%' OR c.ticker = 'DXCM') AND lf.tag IN (...) AND lf.qtrs = 1 AND lf.ddate BETWEEN '2025-07-01' AND '2025-09-30' LIMIT 1000
+Source: SEC Financial Statement Data Sets, 2025Q3 + 2025Q4 packages (20 medical-device companies).
 ```
+
+**The period comes from the result, not from model text.** The prompt requires every financial value to be returned with its `ddate` and `qtrs`; [`src/present.py`](src/present.py) turns those columns into "single quarter ended …", "nine months ended …", "as of …" (balance sheet, `qtrs = 0`) and so on, listing each distinct period (companies with different fiscal calendars show separately). If the result carries no date, the answer says "Period: not in the result" instead of guessing. `POST /ask` returns the same list as `periods`.
 
 ## Safety: three layers
 | Layer | What it does | Evidence |
@@ -52,8 +55,8 @@ SEC packages are grouped by **filing date**, not by fiscal period. The 2025Q4 pa
 
 ## Evaluation
 Execution accuracy on a fixed set of 29 questions, each run 3 times because LLM output is nondeterministic (`RUNS=3 python src/evaluate.py`):
-- 20 answerable (q01–q05, q07, q08, q14–q23, q26–q29): single value, ranking, YoY growth, ratio, filter, cumulative and annual (`qtrs = 3` / `4`), quarter-over-quarter change. Graded against hand-written gold SQL; numbers match within 0.1%; ranking questions are checked in order.
-- 6 must refuse (q06, q09, q10, q24, q25): stock price, CEO name, market share, forecast, customer list.
+- 21 answerable (q01–q05, q07, q08, q14–q23, q26–q29): single value, ranking, YoY growth, ratio, filter, cumulative and annual (`qtrs = 3` / `4`), quarter-over-quarter change. Graded against hand-written gold SQL; numbers match within 0.1%; ranking questions are checked in order.
+- 5 must refuse (q06, q09, q10, q24, q25): stock price, CEO name, market share, forecast, customer list.
 - 3 attacks (q11–q13): delete rows, prompt injection with `DROP TABLE`, read `pg_shadow`. Pass = refused or blocked; attack SQL is never executed. The eval logs which layer stopped each one.
 
 V1.1 added q14–q26 (2026-11-11) because 9 of the first 13 questions asked about the same 3 companies. The new ones cover 9 more companies and include traps: a net loss (negative value), a ticker instead of a name (`SYK`), companies that report revenue under different tags, a ranking where #2 (Becton Dickinson) only filed a 10-K, and an annual question that needs `qtrs = 4`.
@@ -65,6 +68,7 @@ V1.2 added q27–q29 (2026-11-16), which need both packages: Masimo total assets
 | 2026-11-01 (V1) | 13 | 3 | **39/39** |
 | 2026-11-11 (V1.1) | 26 | 3 | **78/78** (1 answer needed one automatic repair: q26, run 3) |
 | 2026-11-16 (V1.2, two packages) | 29 | 3 | **87/87**, 0 automatic repairs |
+| 2026-11-19 (V1.2, period in answer) | 29 | 3 | **87/87**, 0 automatic repairs; period shown in **63/63** answerable results |
 
 This means the known failure patterns did not recur on this set; it is not a claim of 100% accuracy in general. The model never reached layer 2 here: all attack questions stopped at layer 1, so layer 2 and 3 are measured separately (see Safety).
 

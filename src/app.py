@@ -1,16 +1,9 @@
 # User entry point: python src/app.py "question" prints a readable answer (requirements §7)
 import sys
-from datetime import date
-import sqlglot
 from evaluate import answer
+from present import column_names, describe_periods, period_line
 
-SOURCE = "Source: SEC Financial Statement Data Sets, 2025Q4 (20 medical-device companies)."
-
-def column_names(sql, n):
-    """Read each column name from the SQL; use col1, col2, ... when there is none (e.g. COUNT(*))."""
-    names = [e.alias_or_name for e in sqlglot.parse_one(sql, read="postgres").selects]
-    names = [x if x and x != "*" else f"col{i + 1}" for i, x in enumerate(names)]
-    return names if len(names) == n else [f"col{i + 1}" for i in range(n)]
+SOURCE = "Source: SEC Financial Statement Data Sets, 2025Q3 + 2025Q4 packages (20 medical-device companies)."
 
 def respond(question):
     try:
@@ -21,7 +14,7 @@ def respond(question):
                 return ("This question can't be answered from the financial statement data "
                 "(it has no stock prices, forecasts, or filing text).\n"
                 "You can ask about revenue, net income, assets, cash, growth or margins "
-                "of the 20 medical-device companies in the 2025Q4 SEC filings.")
+                "of the 20 medical-device companies in the 2025Q3-2025Q4 SEC filings.")
     if not rows:                              # empty result != 0
         return f"No matching data was found. This means the data is missing, not that the value is 0.\nSQL: {sql}\n{SOURCE}"
     names = column_names(sql, len(rows[0]))
@@ -29,9 +22,7 @@ def respond(question):
     lines += [" | ".join(str(v) for v in row) for row in rows[:20]]   # show at most 20 rows
     if len(rows) > 20:
         lines.append(f"... ({len(rows)} rows in total)")
-    periods = sorted({str(v) for row in rows for v in row if isinstance(v, date)})
-    if periods:                               # if the result has dates, say which period it is
-        lines.append("Period end: " + ", ".join(periods))
+    lines.append(period_line(describe_periods(names, rows)))   # which period(s) the numbers cover
     lines += [f"SQL: {sql}", SOURCE]
     return "\n".join(lines)
 

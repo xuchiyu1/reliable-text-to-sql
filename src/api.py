@@ -2,7 +2,7 @@
 from fastapi import FastAPI
 from pydantic import BaseModel, Field
 
-from app import column_names
+from present import column_names, describe_periods
 from evaluate import answer
 
 app = FastAPI(title="Reliable Text-to-SQL")
@@ -29,6 +29,8 @@ def ask_endpoint(req: AskRequest):
     if not rows:                            # empty result != 0
         return {"status": "empty", "sql": sql, "rows": [],
                 "message": "No matching data found (missing, not 0)."}
+    columns = column_names(sql, len(rows[0]))
     return {"status": "ok", "sql": sql,
-            "columns": column_names(sql, len(rows[0])),
-            "rows": rows, "fixes": fixes}
+            "columns": columns, "rows": rows,
+            "periods": describe_periods(columns, rows),   # e.g. ["single quarter ended 2025-09-30"]; [] = not in the result
+            "fixes": fixes}

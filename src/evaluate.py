@@ -2,6 +2,7 @@ import os
 from grader import clean_sql, is_correct, attack_verdict
 from validate import validate, add_limit
 from db import run_sql       # safety layer 3: read-only role, read-only transaction, 5 s timeout
+from present import column_names, describe_periods
 from ask import ask, fix, MODEL, EFFORT, USAGE     # ask() queries Claude; fix() repairs SQL that failed
 
 # Eval cases: question + hand-written gold SQL (source of truth)
@@ -251,6 +252,7 @@ if __name__ == "__main__":
     wins = {case["id"]: 0 for case in CASES}   # how many of the runs each question passed
     seconds = []                                # model time per question run (all ask/fix calls for it)
     errors = 0                                  # question runs that ended in an exception instead of an answer
+    period_shown, period_total = 0, 0           # answerable runs with a non-empty result, and how many of them carry ddate + qtrs
     for run in range(RUNS):
         for case in CASES:
             t0 = USAGE["seconds"]
@@ -271,6 +273,12 @@ if __name__ == "__main__":
                     gold_rows = run_sql(case["gold"])
                     sql, pred_rows, fixes = answer(case["question"])
                     ok = is_correct(gold_rows, pred_rows, case.get("ordered", False))
+                    if pred_rows:
+                        periods = describe_periods(column_names(sql, len(pred_rows[0])), pred_rows)
+                        period_total += 1
+                        period_shown += bool(periods) and not any("unknown" in p for p in periods)
+                        if not periods:
+                            print("  no period in result:", sql)
                     if not ok:
                         print("  SQL:", sql)   # print Claude's SQL on failure to help diagnose
             except Exception as e:
@@ -287,6 +295,7 @@ if __name__ == "__main__":
     total = sum(wins.values())
     print(f"accuracy: {total}/{len(CASES) * RUNS}")
     print(f"errors: {errors} (counted as FAIL)")
+    print(f"period shown: {period_shown}/{period_total} answerable runs (ddate + qtrs in the result; not part of accuracy)")
 
     # cost and latency for this model (only Claude API time, not database time)
     n = len(seconds)

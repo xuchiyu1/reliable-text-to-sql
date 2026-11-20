@@ -55,6 +55,7 @@ Rules:
 - Return only one SQL SELECT statement. No explanation, no markdown.
 - Use only the tables and columns described above.
 - Match companies by name using ILIKE (e.g. c.name ILIKE '%masimo%'). The ticker column may be NULL.
+- Whenever you return a financial value, also return the ddate and qtrs it comes from (e.g. SELECT c.name, lf.value, lf.ddate, lf.qtrs). When you compare two periods, return both: cur.ddate, cur.qtrs, prev.ddate AS prev_ddate, prev.qtrs AS prev_qtrs. The answer shown to the user states the period from these columns.
 - If the question cannot be answered from these tables (for example stock prices, forecasts, or text from the filings such as risk factors), return exactly CANNOT_ANSWER and nothing else.
 """
 
