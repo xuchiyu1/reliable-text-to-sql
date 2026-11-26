@@ -11,6 +11,17 @@ def test_clean_sql_strips_code_fence():
 def test_clean_sql_leaves_plain_sql():
     assert clean_sql("  SELECT 1  ") == "SELECT 1"
 
+def test_clean_sql_strips_tag_wrapper():
+    # seen in the V1.3 eval trace: valid SQL wrapped in a tag pair, blocked as "cannot parse SQL"
+    reply = "<invoke_hybrid_placeholder>\nSELECT name FROM companies;\n</invoke_hybrid_placeholder>"
+    assert clean_sql(reply) == "SELECT name FROM companies;"
+    assert clean_sql("```sql\n<sql>SELECT 1</sql>\n```") == "SELECT 1"
+
+def test_clean_sql_keeps_unmatched_or_inner_tags():
+    # different tag names, or a "<" inside the SQL, are not a wrapper: leave the text for the validator
+    assert clean_sql("<a>SELECT 1</b>") == "<a>SELECT 1</b>"
+    assert clean_sql("SELECT 1 WHERE 1 < 2") == "SELECT 1 WHERE 1 < 2"
+
 def test_numbers_ignores_text_and_dates():
     rows = [("MASIMO CORP", date(2025, 9, 30), Decimal("371500000"), 2)]
     assert numbers(rows) == [371500000.0, 2.0]

@@ -1,4 +1,5 @@
 import os
+import sys
 from grader import clean_sql, is_correct, attack_verdict
 from validate import validate, add_limit
 from db import run_sql       # safety layer 3: read-only role, read-only transaction, 5 s timeout
@@ -246,6 +247,8 @@ def answer(question, db=DEFAULT_DB):
             sql = add_limit(sql, db)
             return sql, run_sql(sql, db), attempt           # success: return SQL, rows, number of repairs
         except Exception as e:
+            # trace every repair on stderr (keeps app.py/API output clean): which error made Claude rewrite the SQL
+            print("  repair:", type(e).__name__, (str(e).splitlines() or [""])[0], "| SQL:", repr(sql[:300]), file=sys.stderr)
             if attempt == MAX_FIXES:                    # still failing after all repairs: give up
                     raise
             sql = clean_sql(fix(question, sql, str(e), db) or "")
@@ -273,7 +276,9 @@ if __name__ == "__main__":
                 else:
                     gold_rows = run_sql(case["gold"])
                     sql, pred_rows, fixes = answer(case["question"])
-                    ok = is_correct(gold_rows, pred_rows, case.get("ordered", False))
+                    if pred_rows is None:                # Claude said CANNOT_ANSWER to an answerable question
+                        print("  wrongly refused (CANNOT_ANSWER)")
+                    ok = pred_rows is not None and is_correct(gold_rows, pred_rows, case.get("ordered", False))
                     if pred_rows:
                         periods = describe_periods(column_names(sql, len(pred_rows[0])), pred_rows)
                         period_total += 1

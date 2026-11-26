@@ -28,3 +28,10 @@ def test_allowed_tables_are_per_database(monkeypatch):
     assert validate("SELECT name FROM companies", db="toy") == "table not allowed: companies"
     assert validate("SELECT * FROM orders", db="sec") == "table not allowed: orders"
     assert "LIMIT 1000" in add_limit("SELECT * FROM orders", db="toy")
+
+
+def test_unknown_schema_source_is_an_error(monkeypatch):
+    from databases import system_prompt
+    monkeypatch.setenv("SCHEMA_SOURCE", "nope")
+    with pytest.raises(ValueError):
+        system_prompt("sec")

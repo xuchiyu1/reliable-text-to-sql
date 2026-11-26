@@ -1,11 +1,21 @@
+import re
 from decimal import Decimal
 from validate import validate
+
+# a reply wrapped in one pair of XML-like tags, e.g. "<sql>\nSELECT ...\n</sql>" (same tag name at both ends)
+TAG_WRAPPER = re.compile(r"^<([A-Za-z_][\w-]*)>\s*(.*?)\s*</\1>$", re.S)
+
 def clean_sql(text):
-    # Claude sometimes wraps SQL in ```sql ... ```; strip it
+    # Claude sometimes wraps SQL in ```sql ... ``` or in a pair of tags like <sql> ... </sql>; strip the wrapper.
+    # Only the wrapper is removed: the SQL inside still goes through the validator.
     text = text.strip()
     if text.startswith("```"):
         text = text.split("\n", 1)[1]      # drop the first line ```sql
         text = text.rsplit("```", 1)[0]    # drop the closing ```
+        text = text.strip()
+    match = TAG_WRAPPER.match(text)
+    if match:
+        text = match.group(2)
     return text.strip()
 
 
