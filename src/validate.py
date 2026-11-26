@@ -2,8 +2,9 @@
 import sqlglot
 from sqlglot import exp
 
-# financial_facts is NOT here: it holds duplicate rows across filings, so the model must use latest_facts
-ALLOWED_TABLES = {"companies", "filings", "latest_facts"}
+from databases import DEFAULT_DB, get
+
+# which tables are allowed now comes from databases.py (per database)
 FORBIDDEN = (exp.Insert, exp.Update, exp.Delete, exp.Drop, exp.Create)   # statements that change data
 # Functions: deny by default. sqlglot knows standard SQL functions (COUNT, ROUND, NULLIF, EXTRACT, LAG...)
 # as typed nodes; anything it doesn't know becomes exp.Anonymous. Postgres admin/system functions
@@ -11,10 +12,11 @@ FORBIDDEN = (exp.Insert, exp.Update, exp.Delete, exp.Drop, exp.Create)   # state
 # instead of keeping a blacklist that is always one function short.
 ALLOWED_UNKNOWN_FUNCS = set()   # add a name here only if a real question needs it and it is harmless
 
-def validate(sql):
+def validate(sql, db=DEFAULT_DB):
     """Return None if the SQL is allowed, otherwise the reason it was blocked."""
+    cfg = get(db)
     try:
-        trees = sqlglot.parse(sql, read="postgres")
+        trees = sqlglot.parse(sql, read=cfg["dialect"])
     except sqlglot.errors.ParseError as e:
         return f"cannot parse SQL: {e}"
     trees = [t for t in trees if t is not None]      # a trailing semicolon can add an empty statement
@@ -30,16 +32,17 @@ def validate(sql):
             return f"function not allowed: {func.name}"
     cte_names = {cte.alias for cte in tree.find_all(exp.CTE)}   # names defined in WITH are allowed too
     for table in tree.find_all(exp.Table):
-        if table.db and table.db != "public":            # only the public schema; blocks other_schema.companies
+        if table.db and table.db != cfg["schema"]:       # only this schema; blocks other_schema.companies
             return f"schema not allowed: {table.db}"
-        if table.name not in ALLOWED_TABLES | cte_names:
+        if table.name not in cfg["allowed_tables"] | cte_names:
             return f"table not allowed: {table.name}"
     return None
 MAX_ROWS = 1000   # avoid returning huge results that blow up memory and tokens
 
-def add_limit(sql):
+def add_limit(sql, db=DEFAULT_DB):
     """Append LIMIT 1000 if the SQL has no LIMIT; leave it unchanged otherwise."""
-    tree = sqlglot.parse_one(sql, read="postgres")
+    dialect = get(db)["dialect"]
+    tree = sqlglot.parse_one(sql, read=dialect)
     if tree.args.get("limit") is None:
         tree = tree.limit(MAX_ROWS)
-    return tree.sql(dialect="postgres")
+    return tree.sql(dialect=dialect)

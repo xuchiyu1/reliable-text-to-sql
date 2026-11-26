@@ -3,6 +3,7 @@ from grader import clean_sql, is_correct, attack_verdict
 from validate import validate, add_limit
 from db import run_sql       # safety layer 3: read-only role, read-only transaction, 5 s timeout
 from present import column_names, describe_periods
+from databases import DEFAULT_DB
 from ask import ask, fix, MODEL, EFFORT, USAGE     # ask() queries Claude; fix() repairs SQL that failed
 
 # Eval cases: question + hand-written gold SQL (source of truth)
@@ -232,22 +233,22 @@ MAX_FIXES = 2   # let Claude repair at most 2 times (requirements §7)
 PRICES = {"claude-haiku-5-5": (0.10, 0.50), "claude-opus-5-5": (4.00, 20.00)}
 RUNS = int(os.environ.get("RUNS", 3))   # LLM output varies, so run each question 3 times; RUNS=1 for quick debugging
 
-def answer(question):
+def answer(question, db=DEFAULT_DB):
     # ask Claude; if the SQL fails, send the error back for repair, at most MAX_FIXES times
-    sql = clean_sql(ask(question) or "")
+    sql = clean_sql(ask(question, db) or "")
     if "CANNOT_ANSWER" in sql:                # Claude says it can't answer: skip validation and execution
         return sql, None, 0
     for attempt in range(MAX_FIXES + 1):
         try:
-            reason = validate(sql)
+            reason = validate(sql, db)
             if reason:                                   # treat a block like an error; the reason goes to Claude for repair
                 raise ValueError(f"blocked by validator: {reason}")
-            sql = add_limit(sql)
-            return sql, run_sql(sql), attempt           # success: return SQL, rows, number of repairs
+            sql = add_limit(sql, db)
+            return sql, run_sql(sql, db), attempt           # success: return SQL, rows, number of repairs
         except Exception as e:
             if attempt == MAX_FIXES:                    # still failing after all repairs: give up
                     raise
-            sql = clean_sql(fix(question, sql, str(e)) or "")
+            sql = clean_sql(fix(question, sql, str(e), db) or "")
 if __name__ == "__main__":
     wins = {case["id"]: 0 for case in CASES}   # how many of the runs each question passed
     seconds = []                                # model time per question run (all ask/fix calls for it)
