@@ -11,7 +11,8 @@ def test_unknown_database_is_an_error():
         validate("SELECT name FROM companies", db="no_such_db")
 
 
-def test_sec_prompt_has_dialect_schema_and_rules():
+def test_sec_prompt_has_dialect_schema_and_rules(monkeypatch):
+    monkeypatch.setenv("SCHEMA_SOURCE", "doc")   # the default "db" needs a running database; CI has none
     prompt = system_prompt("sec")
     assert prompt.startswith("You translate questions into PostgreSQL queries")
     assert "latest_facts" in prompt          # from docs/schema.md

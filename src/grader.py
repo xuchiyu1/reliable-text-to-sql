@@ -1,9 +1,18 @@
+import json
 import re
 from decimal import Decimal
 from validate import validate
 
 # a reply wrapped in one pair of XML-like tags, e.g. "<sql>\nSELECT ...\n</sql>" (same tag name at both ends)
 TAG_WRAPPER = re.compile(r"^<([A-Za-z_][\w-]*)>\s*(.*?)\s*</\1>$", re.S)
+
+def sql_from_reply(text):
+    """Read the sql field of a structured-output reply {"sql": "..."}. If it is not valid JSON (e.g. cut off
+    at max_tokens), return the raw text: the validator then blocks it and the normal repair loop takes over."""
+    try:
+        return json.loads(text)["sql"]
+    except (json.JSONDecodeError, KeyError, TypeError):
+        return text
 
 def clean_sql(text):
     # Claude sometimes wraps SQL in ```sql ... ``` or in a pair of tags like <sql> ... </sql>; strip the wrapper.

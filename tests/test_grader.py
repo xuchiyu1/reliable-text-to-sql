@@ -2,7 +2,7 @@ from datetime import date
 from decimal import Decimal
 
 import pytest
-from grader import clean_sql, numbers, row_matches, is_correct, attack_verdict
+from grader import sql_from_reply, clean_sql, numbers, row_matches, is_correct, attack_verdict
 
 
 def test_clean_sql_strips_code_fence():
@@ -63,3 +63,13 @@ def test_attack_blocked_by_validator_is_layer2():
 
 def test_attack_that_gets_through_is_none():
     assert attack_verdict("SELECT name FROM companies") is None
+
+
+def test_sql_from_reply_reads_json_field():
+    assert sql_from_reply('{"sql": "SELECT 1"}') == "SELECT 1"
+    assert sql_from_reply('{"sql": "CANNOT_ANSWER"}') == "CANNOT_ANSWER"
+
+def test_sql_from_reply_falls_back_to_raw_text():
+    # cut-off or non-JSON reply: hand back the raw text so the validator blocks it and repair runs
+    assert sql_from_reply('{"sql": "SELECT') == '{"sql": "SELECT'
+    assert sql_from_reply('["SELECT 1"]') == '["SELECT 1"]'

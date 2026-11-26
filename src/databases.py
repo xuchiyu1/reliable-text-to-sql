@@ -8,7 +8,7 @@ DATABASES = {
         "url": os.environ.get("DATABASE_URL", "dbname=sec_fsds user=text2sql_reader"),
         "dialect": "postgres",               # sqlglot dialect used to parse and rewrite the SQL
         "dialect_name": "PostgreSQL",        # how the prompt names the SQL dialect
-        "schema_source": "doc",              # "doc" = read schema_doc; "db" = generate from the database (introspect.py)
+        "schema_source": "db",               # "db" = generate from the database (introspect.py, needs sql/comments.sql applied); "doc" = read schema_doc
         "schema_doc": "docs/schema.md",      # hand-written tables and columns description for Claude
         "rules_doc": "docs/sec_rules.md",    # metric glossary + answer rules for this data
         # financial_facts is NOT here: it holds duplicate rows across filings, so the model must use latest_facts
