@@ -12,6 +12,17 @@ COLUMNS = [("companies", "cik", "integer", "company ID"),
 KEYS = [("companies", "PRIMARY KEY (cik)")]
 
 
+def test_format_schema_shows_mysql_column_types_and_foreign_keys():
+    # rows shaped like fetch_mysql() output: column_type keeps the ENUM values
+    tables = [("film", "BASE TABLE", None)]
+    columns = [("film", "rating", "enum('G','PG','PG-13','R','NC-17')", None)]
+    keys = [("film", "PRIMARY KEY (film_id)"),
+            ("film", "FOREIGN KEY (language_id) REFERENCES language(language_id)")]
+    text = introspect.format_schema(tables, columns, keys)
+    assert "| rating | enum('G','PG','PG-13','R','NC-17') |  |" in text
+    assert "- FOREIGN KEY (language_id) REFERENCES language(language_id)" in text
+
+
 def test_format_schema_lists_tables_columns_and_keys():
     text = introspect.format_schema(TABLES, COLUMNS, KEYS)
     assert "### companies (table)" in text

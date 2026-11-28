@@ -4,6 +4,8 @@
 #   - table and column names + types   from information_schema (standard SQL, also exists in MySQL)
 #   - comments, primary and foreign keys from pg_catalog (Postgres system tables)
 # Only the allowed tables are read, so tables the agent may not query are never shown to the model.
+# V1.3 step 4b: MySQL databases are read too (fetch_mysql); both paths return the same three
+# lists of rows, so format_schema() is shared.
 import psycopg
 
 TABLES_SQL = """
@@ -38,6 +40,42 @@ WHERE n.nspname = %s AND cl.relname = ANY(%s)
 ORDER BY cl.relname, con.contype DESC, con.conname
 """
 
+# MySQL keeps comments in information_schema itself (TABLE_COMMENT, COLUMN_COMMENT), so no system
+# tables are needed. A view's TABLE_COMMENT is the word 'VIEW', not a description, so it is dropped.
+MYSQL_TABLES_SQL = """
+SELECT table_name, table_type, IF(table_type = 'VIEW', NULL, NULLIF(table_comment, ''))
+FROM information_schema.tables
+WHERE table_schema = %s AND table_name IN %s
+ORDER BY table_name
+"""
+
+# column_type, not data_type: it keeps lengths and the allowed values of ENUM columns,
+# e.g. enum('G','PG','PG-13','R','NC-17'), which tells the model what to put in a WHERE clause.
+MYSQL_COLUMNS_SQL = """
+SELECT table_name, column_name, column_type, NULLIF(column_comment, '')
+FROM information_schema.columns
+WHERE table_schema = %s AND table_name IN %s
+ORDER BY table_name, ordinal_position
+"""
+
+# MySQL names every primary key 'PRIMARY'. Each row of key_column_usage is one column of one key,
+# so the columns are joined back into one line per key, in the same text as pg_get_constraintdef.
+# Unique keys have no referenced table and are not PRIMARY, so the WHERE leaves them out.
+MYSQL_KEYS_SQL = """
+SELECT table_name,
+       CASE WHEN constraint_name = 'PRIMARY'
+            THEN CONCAT('PRIMARY KEY (', GROUP_CONCAT(column_name ORDER BY ordinal_position SEPARATOR ', '), ')')
+            ELSE CONCAT('FOREIGN KEY (', GROUP_CONCAT(column_name ORDER BY ordinal_position SEPARATOR ', '),
+                        ') REFERENCES ', referenced_table_name, '(',
+                        GROUP_CONCAT(referenced_column_name ORDER BY ordinal_position SEPARATOR ', '), ')')
+       END
+FROM information_schema.key_column_usage
+WHERE table_schema = %s AND table_name IN %s
+  AND (constraint_name = 'PRIMARY' OR referenced_table_name IN %s)
+GROUP BY table_name, constraint_name, referenced_table_name
+ORDER BY table_name, constraint_name = 'PRIMARY' DESC, constraint_name
+"""
+
 
 def fetch(url, schema, tables):
     """Read tables, columns and keys of the allowed tables. Returns three lists of tuples."""
@@ -51,6 +89,24 @@ def fetch(url, schema, tables):
         column_rows = cur.fetchall()
         cur.execute(CONSTRAINTS_SQL, (schema, names, names))
         key_rows = cur.fetchall()
+    return table_rows, column_rows, key_rows
+
+
+def fetch_mysql(cfg):
+    """Same three lists as fetch(), read from a MySQL database as its read-only user."""
+    from db import mysql_connect
+    names = tuple(sorted(cfg["allowed_tables"]))   # PyMySQL turns a tuple into ('a', 'b', ...) for IN
+    conn = mysql_connect(cfg)
+    try:
+        with conn.cursor() as cur:
+            cur.execute(MYSQL_TABLES_SQL, (cfg["schema"], names))
+            table_rows = cur.fetchall()
+            cur.execute(MYSQL_COLUMNS_SQL, (cfg["schema"], names))
+            column_rows = cur.fetchall()
+            cur.execute(MYSQL_KEYS_SQL, (cfg["schema"], names, names))
+            key_rows = cur.fetchall()
+    finally:
+        conn.close()
     return table_rows, column_rows, key_rows
 
 
@@ -72,12 +128,17 @@ def format_schema(table_rows, column_rows, key_rows):
     return "\n".join(lines) + "\n"
 
 
-def describe(url, schema, tables):
-    return format_schema(*fetch(url, schema, tables))
+def describe(cfg):
+    """Schema description of one database's allowed tables, from its own catalog."""
+    if cfg["dialect"] == "mysql":
+        return format_schema(*fetch_mysql(cfg))
+    return format_schema(*fetch(cfg["url"], cfg["schema"], cfg["allowed_tables"]))
 
 
 if __name__ == "__main__":
-    # print the generated description for the default database, to compare with docs/schema.md
-    from databases import get
-    cfg = get()
-    print(describe(cfg["url"], cfg["schema"], cfg["allowed_tables"]))
+    # print the generated description of one database: python src/introspect.py [sec|sakila]
+    import sys
+    from dotenv import load_dotenv
+    load_dotenv()                                   # the MySQL reader password is in .env
+    from databases import DEFAULT_DB, get
+    print(describe(get(sys.argv[1] if len(sys.argv) > 1 else DEFAULT_DB)))

@@ -15,6 +15,22 @@ DATABASES = {
         "allowed_tables": {"companies", "filings", "latest_facts"},
         "schema": "public",                  # tables may only be named bare or as public.<table>
     },
+    # V1.3 step 4: second database = MySQL Sakila sample DB (a DVD rental store), from docker-compose `mysql`
+    "sakila": {
+        # read-only user; the password comes from MYSQL_READER_PASSWORD (.env), see db.mysql_connect
+        "url": os.environ.get("SAKILA_URL", "mysql://text2sql_reader@127.0.0.1:3306/sakila"),
+        "dialect": "mysql",
+        "dialect_name": "MySQL",
+        "schema_source": "db",               # no hand-written schema doc: the description is read from MySQL
+        "schema_doc": None,
+        "rules_doc": "docs/sakila_rules.md",
+        # the 15 base tables. Left out: film_text (a copy of film.title/description kept for full-text
+        # search) and the 7 views (shortcuts built on these tables; can be added later if questions need them)
+        "allowed_tables": {"actor", "address", "category", "city", "country", "customer", "film",
+                           "film_actor", "film_category", "inventory", "language", "payment",
+                           "rental", "staff", "store"},
+        "schema": "sakila",                  # in MySQL the qualifier is the database: sakila.film
+    },
 }
 DEFAULT_DB = "sec"
 
@@ -30,9 +46,11 @@ def schema_text(cfg):
     """The tables-and-columns part of the prompt. SCHEMA_SOURCE=db|doc in the shell overrides the config (for A/B evals)."""
     source = os.environ.get("SCHEMA_SOURCE", cfg["schema_source"])
     if source == "db":
-        from introspect import describe     # imported here: it needs psycopg and a running database
-        return describe(cfg["url"], cfg["schema"], cfg["allowed_tables"])
+        from introspect import describe     # imported here: it needs a database driver and a running database
+        return describe(cfg)
     if source == "doc":
+        if not cfg["schema_doc"]:
+            raise ValueError("this database has no schema doc; use SCHEMA_SOURCE=db")
         return open(cfg["schema_doc"], encoding="utf-8").read()
     raise ValueError(f"unknown schema source: {source}")
 

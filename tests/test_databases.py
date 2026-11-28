@@ -31,6 +31,23 @@ def test_allowed_tables_are_per_database(monkeypatch):
     assert "LIMIT 1000" in add_limit("SELECT * FROM orders", db="toy")
 
 
+def test_sakila_uses_mysql_rules():
+    # the validator reads the MySQL dialect and Sakila's tables from the config (no database needed)
+    assert validate("SELECT title FROM film WHERE rating = 'PG' LIMIT 5", db="sakila") is None
+    assert validate("SELECT f.title FROM sakila.film f", db="sakila") is None        # MySQL: database.table
+    assert validate("SELECT user FROM mysql.user", db="sakila") == "schema not allowed: mysql"
+    assert validate("SELECT * FROM film_text", db="sakila") == "table not allowed: film_text"
+    assert validate("SELECT name FROM companies", db="sakila") == "table not allowed: companies"
+    assert validate("SELECT title FROM film", db="sec") == "table not allowed: film"
+    assert add_limit("SELECT `title` FROM film", db="sakila") == "SELECT `title` FROM film LIMIT 1000"
+
+
+def test_database_without_schema_doc_rejects_doc_source(monkeypatch):
+    monkeypatch.setenv("SCHEMA_SOURCE", "doc")
+    with pytest.raises(ValueError):
+        system_prompt("sakila")
+
+
 def test_unknown_schema_source_is_an_error(monkeypatch):
     from databases import system_prompt
     monkeypatch.setenv("SCHEMA_SOURCE", "nope")
